@@ -10,6 +10,12 @@
 #include <dirent.h>
 #include <ncurses.h>
 
+// Variaveis auxiliares para guardar as posicoes de output na tela ncurses
+int height, width;
+int posCursX = 0, posCursY = 0;       // posicao do cursor x e y para a lista de mensagens
+int posCursX_tp = 0, posCursY_tp = 0; // posicao do cursor x e y para escrever mensagem
+
+// Variaveis para nome e fila de mensagens do usuario
 char userfila[17] = "/chat-";
 char username[11];
 
@@ -24,7 +30,12 @@ struct
 void intHandler(int sg)
 {
   //handler do ctrl+c que manda o usuario usar o comando exit
+  getyx(stdscr, posCursY_tp, posCursX_tp); // salva posicao atual
+  move(posCursY, posCursX);
   wprintw(stdscr, "Para sair digite exit\n");
+  move(posCursY_tp, posCursX_tp); // restaura a posicao
+  refresh();                      // atualizar tela ncurse
+
   refresh();
 }
 
@@ -68,7 +79,7 @@ void *threceber(void *s)
   //abre a fila para recebimento
   if ((receber = mq_open(userfila, O_RDWR)) < 0)
   {
-    perror("mq_open error");
+    wprintw(stdscr, "mq_open error\n");
     exit(1);
   }
 
@@ -77,9 +88,12 @@ void *threceber(void *s)
 
     if ((mq_receive(receber, (char *)&msg, sizeof(msg), NULL)) < 0)
     {
-      perror("mq_receive erro");
+      wprintw(stdscr, "mq_receive erro\n");
       exit(1);
     }
+
+    getyx(stdscr, posCursY_tp, posCursX_tp); // salva posicao atual
+    move(posCursY, posCursX);                // up screen
 
     if (strcmp("all", msg.para) == 0)
     { //formato de exibição caso seja recebido um broadcast
@@ -89,7 +103,10 @@ void *threceber(void *s)
     { //formato de exibição normal
       wprintw(stdscr, "%s: %s\n", msg.de, msg.corpo);
     }
-    refresh(); // atualizar tela ncurse
+
+    getyx(stdscr, posCursY, posCursX);
+    move(posCursY_tp, posCursX_tp); // restaura a posicao
+    refresh();                      // atualizar tela ncurse
   }
 
   pthread_exit(NULL);
@@ -141,8 +158,6 @@ void *thenviar(void *s)
         continue;
       }
 
-      wprintw(stdscr, "Mensagem Enviada\n");
-      refresh();
       do
       {
         ret = mq_send(enviar, (void *)&msg, sizeof(msg), 0);
@@ -169,7 +184,10 @@ void *thenviar(void *s)
     //abre a fila de destino
     if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
     {
+      // move(posCursY, posCursX);                       // up screen
       wprintw(stdscr, "UNKNOWN USER %s\n", msg.para); //erro de usuario inexistente
+      // getyx(stdscr, posCursY, posCursX);              // salvar pos de cima
+      // refresh();                                      // atualizar tela ncurse
       return NULL;
     }
 
@@ -182,7 +200,17 @@ void *thenviar(void *s)
 
     if (ret < 0)
     {
+      // move(posCursY, posCursX);                       // up screen
       wprintw(stdscr, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo); //erro retornado se não foi possível enviar mensagem
+      // getyx(stdscr, posCursY, posCursX);              // salvar pos de cima
+      // refresh();                                      // atualizar tela ncurse
+    }
+    else
+    {
+      // move(posCursY, posCursX); // up screen
+      wprintw(stdscr, "Mensagem Enviada\n");
+      // getyx(stdscr, posCursY, posCursX); // salvar pos de cima
+      // refresh();                         // atualizar tela ncurse
     }
 
     mq_close(enviar);
@@ -236,9 +264,18 @@ int main()
   char oper[12]; //variavel para receber o comando
   msgtp msg;
 
+  getmaxyx(stdscr, height, width); // pegar altura e largura máxima da janela atual
+
   while (1)
   {
+    getyx(stdscr, posCursY, posCursX); // guarda a posicao atual da parte de cima da tela
+    move(height - 1, 0);               // posicao da ultima linha do console
+    wclrtoeol(stdscr);                 // apaga o lado direito da linha onde estar o cursor
+    wprintw(stdscr, "Comando: ");
+    refresh();
     scanw("%s", oper);
+    move(posCursY, posCursX); // up screen
+
     if (strcmp(oper, "exit") == 0)
     {           // comando exit
       endwin(); // fechar tela da ncurse
@@ -253,10 +290,19 @@ int main()
     else if (strcmp(oper, "enviar") == 0)
     { //comando enviar
       wprintw(stdscr, "Digite a mensagem no formato destino:mensagem\n");
+      // getyx(stdscr, posCursY, posCursX); // caso queira manter essa mensagem msm depois do envio da msg
+      move(height - 1, 0);
+      wclrtoeol(stdscr); // apaga o lado direito da linha onde estar o cursor
+      wprintw(stdscr, "Mensagem: ");
       scanw(" %[^:]:%[^\n]", msg.para, msg.corpo);
+      refresh();
+      move(posCursY, posCursX); // up screen
+
       strcpy(msg.de, username);
       pthread_create(&ids[1], NULL, thenviar, (void *)&msg); //cria uma thread que faz o envio da mensagem
+      pthread_join(ids[1], NULL);
     }
+    strcpy(oper, "");
     refresh(); // atualizar tela ncurse
   }
 

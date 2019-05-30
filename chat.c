@@ -8,6 +8,7 @@
 #include<signal.h>
 #include<fcntl.h>
 #include <dirent.h> 
+#include <sys/types.h>
 
 char userfila[17]="/chat-";
 char username[11];
@@ -197,13 +198,18 @@ int main(){
  attr.mq_msgsize = sizeof(msgtp);
  attr.mq_flags = 0;
 
+ mode_t pmask = umask(0000);
+
+
+
  //Cria e abre a fila para receber as mensagens, com os paramteros acima e permissão apenas de escrita para quem não for o dono
  if((receber = mq_open(userfila, O_RDWR|O_CREAT|O_EXCL, 0622, &attr))<0){
    printf("Usuario já existe\n");
    exit(1);
 }
 
-  
+umask(pmask);  
+
  pthread_t ids[2];
 
 

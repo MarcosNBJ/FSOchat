@@ -10,10 +10,11 @@
 #include <dirent.h>
 #include <ncurses.h>
 
+// tela da lista de mensagens e tela de input
+WINDOW *screen_msg, *screen_input;
+
 // Variaveis auxiliares para guardar as posicoes de output na tela ncurses
-int height, width;
-int posCursX = 0, posCursY = 0;       // posicao do cursor x e y para a lista de mensagens
-int posCursX_tp = 0, posCursY_tp = 0; // posicao do cursor x e y para escrever mensagem
+int height, width, height_screen_msg, init_height_screen_msg;
 
 // Variaveis para nome e fila de mensagens do usuario
 char userfila[17] = "/chat-";
@@ -30,13 +31,8 @@ struct
 void intHandler(int sg)
 {
     //handler do ctrl+c que manda o usuario usar o comando exit
-    getyx(stdscr, posCursY_tp, posCursX_tp); // salva posicao atual
-    move(posCursY, posCursX);
-    wprintw(stdscr, "Para sair digite exit\n");
-    move(posCursY_tp, posCursX_tp); // restaura a posicao
-    refresh();                      // atualizar tela ncurse
-
-    refresh();
+    wprintw(screen_msg, "Para sair digite exit\n");
+    wrefresh(screen_msg);
 }
 
 void list()
@@ -49,7 +45,8 @@ void list()
 
     if (dr == NULL)
     {
-        wprintw(stdscr, "Could not open current directory");
+        wprintw(screen_msg, "Could not open current directory");
+        wrefresh(screen_msg);
         return;
     }
 
@@ -59,10 +56,13 @@ void list()
         //itera pelos elementos no diretorio
         if (strncmp("chat-", de->d_name, 5) != 0)
         {
-            continue; //caso nao seja uma fila de mensagens do nosso programa
+            //caso nao seja uma fila de mensagens do nosso programa
+            continue;
         }
 
-        wprintw(stdscr, "%s\n", &de->d_name[5]); //printa apenas o nome do usuario
+        //printa apenas o nome do usuario
+        wprintw(screen_msg, "%s\n", &de->d_name[5]);
+        wrefresh(screen_msg);
     }
 
     closedir(dr);
@@ -79,7 +79,8 @@ void *threceber(void *s)
     //abre a fila para recebimento
     if ((receber = mq_open(userfila, O_RDWR)) < 0)
     {
-        wprintw(stdscr, "mq_open error\n");
+        wprintw(screen_msg, "mq_open error\n");
+        wrefresh(screen_msg);
         exit(1);
     }
 
@@ -88,25 +89,22 @@ void *threceber(void *s)
 
         if ((mq_receive(receber, (char *)&msg, sizeof(msg), NULL)) < 0)
         {
-            wprintw(stdscr, "mq_receive erro\n");
+            wprintw(screen_msg, "mq_receive erro\n");
+            wrefresh(screen_msg);
             exit(1);
         }
 
-        getyx(stdscr, posCursY_tp, posCursX_tp); // salva posicao atual
-        move(posCursY, posCursX);                // up screen
-
         if (strcmp("all", msg.para) == 0)
         { //formato de exibição caso seja recebido um broadcast
-            wprintw(stdscr, "Broadcast de %s: %s\n", msg.de, msg.corpo);
+            wprintw(screen_msg, "Broadcast de %s: %s\n", msg.de, msg.corpo);
+            wrefresh(screen_msg);
         }
         else
         { //formato de exibição normal
-            wprintw(stdscr, "%s: %s\n", msg.de, msg.corpo);
+            wprintw(screen_msg, "%s: %s\n", msg.de, msg.corpo);
+            wrefresh(screen_msg);
+            wrefresh(screen_input);
         }
-
-        getyx(stdscr, posCursY, posCursX);
-        move(posCursY_tp, posCursX_tp); // restaura a posicao
-        refresh();                      // atualizar tela ncurse
     }
 
     pthread_exit(NULL);
@@ -131,7 +129,8 @@ void *thenviar(void *s)
 
         if (dr == NULL)
         {
-            wprintw(stdscr, "Could not open current directory");
+            wprintw(screen_msg, "Could not open current directory");
+            wrefresh(screen_msg);
             return NULL;
         }
 
@@ -154,7 +153,8 @@ void *thenviar(void *s)
 
             if ((enviar = mq_open(envfila2, O_WRONLY)) < 0)
             {
-                wprintw(stdscr, "UNKNOWN USER %s\n", &de->d_name[5]); //erro de usuario inexistente
+                wprintw(screen_msg, "UNKNOWN USER %s\n", &de->d_name[5]); //erro de usuario inexistente
+                wrefresh(screen_msg);
                 continue;
             }
 
@@ -167,7 +167,9 @@ void *thenviar(void *s)
 
             if (ret < 0)
             {
-                wprintw(stdscr, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo); //erro retornado se não foi possível enviar mensagem
+                //erro retornado se não foi possível enviar mensagem
+                wprintw(screen_msg, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo);
+                wrefresh(screen_msg);
             }
 
             mq_close(enviar);
@@ -184,10 +186,8 @@ void *thenviar(void *s)
         //abre a fila de destino
         if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
         {
-            // move(posCursY, posCursX);                       // up screen
-            wprintw(stdscr, "UNKNOWN USER %s\n", msg.para); //erro de usuario inexistente
-            // getyx(stdscr, posCursY, posCursX);              // salvar pos de cima
-            // refresh();                                      // atualizar tela ncurse
+            wprintw(screen_msg, "UNKNOWN USER %s\n", msg.para); //erro de usuario inexistente
+            wrefresh(screen_msg);
             return NULL;
         }
 
@@ -200,17 +200,14 @@ void *thenviar(void *s)
 
         if (ret < 0)
         {
-            // move(posCursY, posCursX);                       // up screen
-            wprintw(stdscr, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo); //erro retornado se não foi possível enviar mensagem
-                                                                             // getyx(stdscr, posCursY, posCursX);              // salvar pos de cima
-                                                                             // refresh();                                      // atualizar tela ncurse
+            //erro retornado se não foi possível enviar mensagem
+            wprintw(screen_msg, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo);
+            wrefresh(screen_msg);
         }
         else
         {
-            // move(posCursY, posCursX); // up screen
-            wprintw(stdscr, "Mensagem Enviada\n");
-            // getyx(stdscr, posCursY, posCursX); // salvar pos de cima
-            // refresh();                         // atualizar tela ncurse
+            wprintw(screen_msg, "Mensagem Enviada\n");
+            wrefresh(screen_msg);
         }
 
         mq_close(enviar);
@@ -221,27 +218,28 @@ void *thenviar(void *s)
 
 int main()
 {
-
     signal(SIGINT, intHandler); //implementa o handler para o ctrl+c
     int userflag = 0;           //variavel para ajduar na verificação do nome de usuario
 
-    initscr(); // inicia screen do curses.h
-
-    wprintw(stdscr, "Digite o seu nome de usuario:");
+    initscr();                       // inicia screen do curses.h
+    getmaxyx(stdscr, height, width); // pegar altura e largura máxima da janela atual
+    height_screen_msg = height - 2;
+    screen_msg = newwin(height_screen_msg, width, 0, 0);       // subscreen onde eh listado as mensagens
+    screen_input = newwin(1, width, height_screen_msg + 1, 0); // subscreen onde digita os comandos
+    wprintw(screen_msg, "Digite o seu nome de usuario:");
 
     do
     {
-        scanw("%s", username);
+        wscanw(screen_msg, "%s", username);
         if (strcmp(username, "all") == 0)
         {
-            wprintw(stdscr, "Voce nao pode escolher este nome de usuario\n");
+            wprintw(screen_msg, "Voce nao pode escolher este nome de usuario\n");
+            wrefresh(screen_msg);
             userflag = 1;
         }
     } while (userflag == 1); //pede para que o usuario entre com seu login, que não pode ser "all"
 
     strcat(userfila, username); //junta o "/chat-" com o nome do usuario pra formar o nome da fila
-
-    wprintw(stdscr, "Fila criada, de nome %s\n", userfila);
 
     mqd_t receber;
     struct mq_attr attr;
@@ -255,9 +253,15 @@ int main()
     //Cria e abre a fila para receber as mensagens, com os paramteros acima e permissão apenas de escrita para quem não for o dono
     if ((receber = mq_open(userfila, O_RDWR | O_CREAT | O_EXCL, 0622, &attr)) < 0)
     {
+        endwin();            // fechar tela da ncurse
+        mq_unlink(userfila); // fechar fila de mensagens
         printf("Usuario já existe\n");
+        printf("Fechando Chat\n");
         exit(1);
     }
+
+    wprintw(screen_msg, "Fila criada, de nome %s\n", userfila);
+    wrefresh(screen_msg);
 
     umask(pmask);
 
@@ -268,23 +272,18 @@ int main()
     char oper[12]; //variavel para receber o comando
     msgtp msg;
 
-    getmaxyx(stdscr, height, width); // pegar altura e largura máxima da janela atual
-
     while (1)
     {
-        getyx(stdscr, posCursY, posCursX); // guarda a posicao atual da parte de cima da tela
-        move(height - 1, 0);               // posicao da ultima linha do console
-        wclrtoeol(stdscr);                 // apaga o lado direito da linha onde estar o cursor
-        wprintw(stdscr, "Comando: ");
-        refresh();
-        scanw("%s", oper);
-        move(posCursY, posCursX); // up screen
+        wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
+        wprintw(screen_input, "Comando: ");
+        wrefresh(screen_input);
+        wscanw(screen_input, "%s", oper);
 
         if (strcmp(oper, "exit") == 0)
-        {             // comando exit
-            endwin(); // fechar tela da ncurse
+        {                        // comando exit
+            endwin();            // fechar tela da ncurse
+            mq_unlink(userfila); // fechar fila de mensagens
             printf("\nFechando Chat\n");
-            mq_unlink(userfila); // fechar fila de mensgaens
             break;
         }
         else if (strcmp(oper, "list") == 0)
@@ -293,24 +292,22 @@ int main()
         }
         else if (strcmp(oper, "enviar") == 0)
         { //comando enviar
-            wprintw(stdscr, "Digite a mensagem no formato destino:mensagem\n");
-            // getyx(stdscr, posCursY, posCursX); // caso queira manter essa mensagem msm depois do envio da msg
-            move(height - 1, 0);
-            wclrtoeol(stdscr); // apaga o lado direito da linha onde estar o cursor
-            wprintw(stdscr, "Mensagem: ");
-            scanw(" %[^:]:%[^\n]", msg.para, msg.corpo);
-            refresh();
-            move(posCursY, posCursX); // up screen
+            wprintw(screen_msg, "Digite a mensagem no formato destino:mensagem\n");
+            wrefresh(screen_msg);
+            wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
+            wprintw(screen_input, "Mensagem: ");
+            wscanw(screen_input, " %[^:]:%[^\n]", msg.para, msg.corpo);
+            wrefresh(screen_input);
 
             strcpy(msg.de, username);
             pthread_create(&ids[1], NULL, thenviar, (void *)&msg); //cria uma thread que faz o envio da mensagem
             pthread_join(ids[1], NULL);
         }
         strcpy(oper, "");
-        refresh(); // atualizar tela ncurse
     }
 
     mq_unlink(userfila);
+    endwin();
 
     return 0;
 }

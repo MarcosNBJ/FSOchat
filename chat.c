@@ -28,12 +28,6 @@ struct
 
 } typedef msgtp;
 
-void print_screen_msg(char *text)
-{
-    wprintw(screen_msg, text);
-    wrefresh(screen_msg);
-}
-
 void close_program(char *bye_msg)
 {
     endwin();            // fechar tela da ncurse
@@ -42,6 +36,37 @@ void close_program(char *bye_msg)
         printf("%s", bye_msg);
     printf("Fechando Chat\n");
     exit(0);
+}
+
+void print_screen_msg(char *text)
+{
+    wprintw(screen_msg, text);
+    wrefresh(screen_msg);
+}
+
+void *wait_keypad()
+{
+    int ch;
+    while ((ch = wgetch(screen_msg)) != KEY_F(1))
+    {
+        switch (ch)
+        {
+        case KEY_DOWN:
+            wscrl(screen_msg, 1);
+            break;
+        case KEY_UP:
+            wscrl(screen_msg, -1);
+            break;
+        default:
+            // se nao for nenhuma das duas teclas, empurra o char lido
+            // devolta para o fluxo de entrada, para que o wscanw da
+            // tela de input consiga ler o valor
+            print_screen_msg("teste\n");
+            ungetc(ch, stdin);
+            break;
+        }
+        wrefresh(screen_msg);
+    }
 }
 
 void intHandler(int sg)
@@ -237,10 +262,24 @@ int main()
 
     initscr();                       // inicia screen do curses.h
     getmaxyx(stdscr, height, width); // pegar altura e largura máxima da janela atual
+
     height_screen_msg = height - 2;
     screen_msg = newwin(height_screen_msg, width, 0, 0); // subscreen onde eh listado as mensagens
     init_height_screen_input = height_screen_msg + 1;
     screen_input = newwin(1, width, init_height_screen_input, 0); // subscreen onde digita os comandos
+
+    // ativar scroll na tela de mensagens
+    scrollok(screen_msg, TRUE);
+    scroll(screen_msg);
+    idlok(screen_msg, TRUE);
+
+    // ativar reconhecimento das teclas de direcao e mouse
+    keypad(screen_msg, TRUE);
+    cbreak();
+
+    pthread_t thread_keypad;
+
+    pthread_create(&thread_keypad, NULL, wait_keypad, NULL);
 
     print_screen_msg("Digite o seu nome de usuario:");
 

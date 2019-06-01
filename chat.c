@@ -10,6 +10,9 @@
 #include <dirent.h>
 #include <ncurses.h>
 
+// constantes uteis
+#define size_message 523
+
 // tela da lista de mensagens e tela de input
 WINDOW *screen_msg, *screen_input;
 
@@ -20,6 +23,14 @@ int height, width, height_screen_msg, init_height_screen_input;
 char userfila[17] = "/chat-";
 char username[11];
 
+// historico de mensagens enviadas ou recebidas
+char message_log[1000][size_message];
+// guarda tamanho atual do log
+int log_msg_current_size = 0;
+// guarda os ultimo indices maximo e minimo do log mostrado na tela
+int last_max_index_shown = 0;
+int last_min_index_shown = 0;
+
 struct
 {
     char de[11];     //usuario origem
@@ -27,6 +38,15 @@ struct
     char corpo[501]; //corpo da mensagem
 
 } typedef msgtp;
+
+void add_message_log(char *msg)
+{
+    // pega
+    char *pos_free = message_log[log_msg_current_size];
+    strcpy(pos_free, msg);
+    last_max_index_shown = log_msg_current_size;
+    log_msg_current_size++;
+}
 
 void close_program(char *bye_msg)
 {
@@ -40,7 +60,13 @@ void close_program(char *bye_msg)
 
 void print_screen_msg(char *text)
 {
-    wprintw(screen_msg, text);
+    char string_formated[size_message + 5];
+    // printa uma string na tela
+    // obs: nao use "\n" na string passada, pois ira bugar o log
+    sprintf(string_formated, "%d - %s", log_msg_current_size, text);
+    wprintw(screen_msg, "%s\n", string_formated);
+    // adiciona ao log
+    add_message_log(string_formated);
     wrefresh(screen_msg);
 }
 
@@ -57,19 +83,43 @@ char *input_text(WINDOW *screen, char *str)
         switch (ch)
         {
         case KEY_DOWN:
-            wscrl(screen, 1);
+            if (last_max_index_shown < log_msg_current_size && log_msg_current_size > height_screen_msg)
+            {
+                // rolagem para baixo na tela de mensagens
+                wscrl(screen_msg, 1);
+                wmove(screen_msg, height_screen_msg, 0);
+                // insere novamente na tela o texto dentro do vetor
+                wprintw(screen_msg, "%s", message_log[last_max_index_shown + 2]);
+                last_max_index_shown++;
+                wmove(screen_msg, height_screen_msg - 1, 0);
+                wrefresh(screen_msg);
+            }
             break;
         case KEY_UP:
-            wscrl(screen, -1);
+            // rolagem para cima na tela de mensagens
+            last_min_index_shown = last_max_index_shown - height_screen_msg + 1;
+            if (last_min_index_shown >= 0)
+            {
+                wscrl(screen_msg, -1);
+                wmove(screen_msg, 0, 0);
+                // insere novamente na tela o texto dentro do vetor
+                wprintw(screen_msg, message_log[last_min_index_shown]);
+                wmove(screen_msg, height_screen_msg - 1, 0);
+                last_max_index_shown--;
+                wrefresh(screen_msg);
+            }
             break;
         case 263:
-            // basckspace
+            // tecla backspace pressionada, apaga um char adicionado no buffer str
             if (strlen(str) > 0)
                 str[strlen(str) - 1] = '\0';
+            // quando cursor move uma posicao para traz, apaga o lado direito
+            // da tela input passada como argumento
             wclrtoeol(screen);
             break;
         default:
             // concatena os caracteres que nao sao keypads down, up ou backspace
+            // dentro de uma string buffer
             aux_ch[0] = ch;
             strcat(str, aux_ch);
             break;
@@ -84,15 +134,21 @@ void split_format_message(char *full_msg, char *dest, char *body)
     // usuario de destino
     char *token;
     token = strtok(full_msg, ":");
-    strcpy(dest, token);
+    if (token != NULL)
+        strcpy(dest, token);
+    else
+        dest = "";
     token = strtok(NULL, ":");
-    strcpy(body, token);
+    if (token != NULL)
+        strcpy(body, token);
+    else
+        body = "";
 }
 
 void intHandler(int sg)
 {
     //handler do ctrl+c que manda o usuario usar o comando exit
-    print_screen_msg("Para sair digite exit\n");
+    print_screen_msg("Para sair digite exit");
 }
 
 void list()
@@ -105,7 +161,7 @@ void list()
 
     if (dr == NULL)
     {
-        print_screen_msg("Could not open current directory\n");
+        print_screen_msg("Could not open current directory");
         return;
     }
 
@@ -122,7 +178,7 @@ void list()
         //printa apenas o nome do usuario
         char string_formated[50];
 
-        sprintf(string_formated, "%s\n", &de->d_name[5]);
+        sprintf(string_formated, "%s", &de->d_name[5]);
         print_screen_msg(string_formated);
     }
 
@@ -156,12 +212,14 @@ void *threceber(void *s)
 
         if (strcmp("all", msg.para) == 0)
         { //formato de exibição caso seja recebido um broadcast
-            sprintf(string_formated, "Broadcast de %s: %s\n", msg.de, msg.corpo);
+            sprintf(string_formated, "Broadcast << %s: %s", msg.de, msg.corpo);
             print_screen_msg(string_formated);
+            wrefresh(screen_input);
         }
         else
         { //formato de exibição normal
-            sprintf(string_formated, "%s: %s\n", msg.de, msg.corpo);
+            sprintf(string_formated, "Mensagem Recebida <<< %s: %s", msg.de, msg.corpo);
+            // adiciona ao log
             print_screen_msg(string_formated);
             wrefresh(screen_input);
         }
@@ -213,7 +271,7 @@ void *thenviar(void *s)
 
             if ((enviar = mq_open(envfila2, O_WRONLY)) < 0)
             {
-                sprintf(string_formated, "UNKNOWN USER %s\n", &de->d_name[5]); //erro de usuario inexistente
+                sprintf(string_formated, "UNKNOWN USER %s", &de->d_name[5]); //erro de usuario inexistente
                 print_screen_msg(string_formated);
                 continue;
             }
@@ -228,7 +286,7 @@ void *thenviar(void *s)
             if (ret < 0)
             {
                 //erro retornado se não foi possível enviar mensagem
-                sprintf(string_formated, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo);
+                sprintf(string_formated, "ERRO %s:%s:%s", msg.de, msg.para, msg.corpo);
                 print_screen_msg(string_formated);
             }
 
@@ -246,7 +304,7 @@ void *thenviar(void *s)
         //abre a fila de destino
         if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
         {
-            sprintf(string_formated, "UNKNOWN USER %s\n", msg.para); //erro de usuario inexistente
+            sprintf(string_formated, "UNKNOWN USER %s", msg.para); //erro de usuario inexistente
             print_screen_msg(string_formated);
             return NULL;
         }
@@ -261,18 +319,27 @@ void *thenviar(void *s)
         if (ret < 0)
         {
             //erro retornado se não foi possível enviar mensagem
-            sprintf(string_formated, "ERRO %s:%s:%s\n", msg.de, msg.para, msg.corpo);
+            sprintf(string_formated, "ERRO %s:%s:%s", msg.de, msg.para, msg.corpo);
             print_screen_msg(string_formated);
         }
         else
         {
-            print_screen_msg("Mensagem Enviada\n");
+            sprintf(string_formated, "Mensagem Enviada >>> %s:%s", msg.para, msg.corpo);
+            print_screen_msg(string_formated);
         }
 
         mq_close(enviar);
     }
 
     pthread_exit(NULL);
+}
+
+void view_log()
+{
+    for (int i = 0; i < log_msg_current_size; i++)
+    {
+        wprintw(screen_msg, "%s", message_log[i]);
+    }
 }
 
 int main()
@@ -305,7 +372,7 @@ int main()
         input_text(screen_msg, username);
         if (strcmp(username, "all") == 0)
         {
-            print_screen_msg("Voce nao pode escolher este nome de usuario\n");
+            print_screen_msg("Voce nao pode escolher este nome de usuario");
             userflag = 1;
         }
     } while (userflag == 1); //pede para que o usuario entre com seu login, que não pode ser "all"
@@ -329,7 +396,7 @@ int main()
     }
 
     char string_formated[501];
-    sprintf(string_formated, "Fila criada, de nome %s\n", userfila);
+    sprintf(string_formated, "Fila criada, de nome %s", userfila);
     print_screen_msg(string_formated);
 
     umask(pmask);
@@ -347,7 +414,6 @@ int main()
         wprintw(screen_input, "Comando: ");
         wrefresh(screen_input);
         input_text(screen_input, oper);
-        wprintw(screen_msg, "comando: %s\n", oper);
         wrefresh(screen_msg);
 
         if (strcmp(oper, "exit") == 0)
@@ -361,7 +427,7 @@ int main()
         else if (strcmp(oper, "enviar") == 0)
         { //comando enviar
             char msg_aux[501] = "";
-            print_screen_msg("Digite a mensagem no formato destino:mensagem\n");
+            print_screen_msg("Digite a mensagem no formato destino:mensagem");
             wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
             wprintw(screen_input, "Mensagem: ");
             input_text(screen_input, msg_aux);
@@ -375,6 +441,7 @@ int main()
             pthread_create(&ids[1], NULL, thenviar, (void *)&msg);
             pthread_join(ids[1], NULL);
         }
+
         strcpy(oper, "");
     }
 

@@ -70,14 +70,18 @@ void print_screen_msg(char *text)
     wrefresh(screen_msg);
 }
 
-char *input_text(WINDOW *screen, char *str)
+char *input_text(WINDOW *screen, char *str, int max_size)
 {
     // funcao para ler strings digitadas e para reconhecer keypads do teclado
     // obs: todas as string chars sao iniciadas com "", antes de chamar
     // esta funcao
     strcpy(str, "");
-    char aux_ch[2];
     int ch;
+    // variaveis auxiliares
+    int read_character_count = 0;
+    char aux_ch[2];
+    int ypos = 0, xpos = 0;
+
     while ((ch = wgetch(screen)) != 10)
     {
         switch (ch)
@@ -112,16 +116,24 @@ char *input_text(WINDOW *screen, char *str)
         case 263:
             // tecla backspace pressionada, apaga um char adicionado no buffer str
             if (strlen(str) > 0)
+            {
                 str[strlen(str) - 1] = '\0';
+                read_character_count--;
+            }
             // quando cursor move uma posicao para traz, apaga o lado direito
             // da tela input passada como argumento
             wclrtoeol(screen);
             break;
         default:
-            // concatena os caracteres que nao sao keypads down, up ou backspace
-            // dentro de uma string buffer
-            aux_ch[0] = ch;
-            strcat(str, aux_ch);
+            getyx(screen, ypos, xpos);
+            if (read_character_count < max_size)
+            {
+                // concatena os caracteres que nao sao keypads down, up ou backspace
+                // dentro de uma string buffer
+                aux_ch[0] = ch;
+                strcat(str, aux_ch);
+                read_character_count++;
+            }
             break;
         }
     }
@@ -344,21 +356,27 @@ void view_log()
 
 int main()
 {
+    WINDOW *screen_box;
     signal(SIGINT, intHandler); //implementa o handler para o ctrl+c
     int userflag = 0;           //variavel para ajduar na verificação do nome de usuario
 
     initscr();                       // inicia screen do curses.h
     getmaxyx(stdscr, height, width); // pegar altura e largura máxima da janela atual
 
-    height_screen_msg = height - 2;
+    height_screen_msg = height - 7;
     screen_msg = newwin(height_screen_msg, width, 0, 0); // subscreen onde eh listado as mensagens
     init_height_screen_input = height_screen_msg + 1;
-    screen_input = newwin(1, width, init_height_screen_input, 0); // subscreen onde digita os comandos
+    // apenas uma subscreen para desenhar uma box sem atrapalhar a tela do input
+    screen_box = newwin(6, width, init_height_screen_input, 0);
+    // subscreen onde digita os comandos
+    screen_input = newwin(4, width - 2, init_height_screen_input + 1, 1);
 
     // ativar scroll na tela de mensagens
     scrollok(screen_msg, TRUE);
     scroll(screen_msg);
     idlok(screen_msg, TRUE);
+
+    scrollok(screen_input, TRUE);
 
     // ativar reconhecimento das teclas de direcao e mouse na tela de mensagens e input
     keypad(screen_msg, TRUE);
@@ -369,7 +387,7 @@ int main()
 
     do
     {
-        input_text(screen_msg, username);
+        input_text(screen_msg, username, 10);
         if (strcmp(username, "all") == 0)
         {
             print_screen_msg("Voce nao pode escolher este nome de usuario");
@@ -410,10 +428,13 @@ int main()
 
     while (1)
     {
+        box(screen_box, 0, 0);
+        wrefresh(screen_box);
         wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
         wprintw(screen_input, "Comando: ");
         wrefresh(screen_input);
-        input_text(screen_input, oper);
+        input_text(screen_input, oper, 12);
+        wclear(screen_input);
         wrefresh(screen_msg);
 
         if (strcmp(oper, "exit") == 0)
@@ -430,7 +451,8 @@ int main()
             print_screen_msg("Digite a mensagem no formato destino:mensagem");
             wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
             wprintw(screen_input, "Mensagem: ");
-            input_text(screen_input, msg_aux);
+            input_text(screen_input, msg_aux, size_message);
+            wclear(screen_input);
             // sprintf(msg.para, msg.corpo, "%[^:]:%[^\n]", msg_aux);
             split_format_message(msg_aux, msg.para, msg.corpo);
             wrefresh(screen_msg);

@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <ncurses.h>
+#include <sys/types.h>
 
 // constantes uteis
 #define size_message 523
@@ -24,7 +25,7 @@ char userfila[17] = "/chat-";
 char username[11];
 
 // historico de mensagens enviadas ou recebidas
-char message_log[1000][size_message];
+char message_log[5000][size_message];
 // guarda tamanho atual do log
 int log_msg_current_size = 0;
 // guarda os ultimo indices maximo e minimo do log mostrado na tela
@@ -171,9 +172,13 @@ void list()
 
     DIR *dr = opendir("/dev/mqueue"); //abre o diretorio
 
+    wprintw(screen_msg, "\n\t** Usuários Conectados **\n\n");
+    wrefresh(screen_msg);
+
     if (dr == NULL)
     {
-        print_screen_msg("Could not open current directory");
+        wprintw(screen_msg, "Could not open current directory\n");
+        wrefresh(screen_msg);
         return;
     }
 
@@ -188,12 +193,11 @@ void list()
         }
 
         //printa apenas o nome do usuario
-        char string_formated[50];
-
-        sprintf(string_formated, "%s", &de->d_name[5]);
-        print_screen_msg(string_formated);
+        wprintw(screen_msg, "\t\t- %s\n", &de->d_name[5]);
+        wrefresh(screen_msg);
     }
-
+    wprintw(screen_msg, "\n");
+    wrefresh(screen_msg);
     closedir(dr);
 }
 
@@ -383,7 +387,8 @@ int main()
     keypad(screen_input, TRUE);
     cbreak();
 
-    print_screen_msg("Digite o seu nome de usuario:");
+    wprintw(screen_msg, "Digite o seu nome de usuario:");
+    wrefresh(screen_msg);
 
     do
     {

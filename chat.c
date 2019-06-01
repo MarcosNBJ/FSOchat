@@ -44,29 +44,49 @@ void print_screen_msg(char *text)
     wrefresh(screen_msg);
 }
 
-void *wait_keypad()
+char *input_text(WINDOW *screen, char *str)
 {
+    // funcao para ler strings digitadas e para reconhecer keypads do teclado
+    // obs: todas as string chars sao iniciadas com "", antes de chamar
+    // esta funcao
+    strcpy(str, "");
+    char aux_ch[2];
     int ch;
-    while ((ch = wgetch(screen_msg)) != KEY_F(1))
+    while ((ch = wgetch(screen)) != 10)
     {
         switch (ch)
         {
         case KEY_DOWN:
-            wscrl(screen_msg, 1);
+            wscrl(screen, 1);
             break;
         case KEY_UP:
-            wscrl(screen_msg, -1);
+            wscrl(screen, -1);
+            break;
+        case 263:
+            // basckspace
+            if (strlen(str) > 0)
+                str[strlen(str) - 1] = '\0';
+            wclrtoeol(screen);
             break;
         default:
-            // se nao for nenhuma das duas teclas, empurra o char lido
-            // devolta para o fluxo de entrada, para que o wscanw da
-            // tela de input consiga ler o valor
-            print_screen_msg("teste\n");
-            ungetc(ch, stdin);
+            // concatena os caracteres que nao sao keypads down, up ou backspace
+            aux_ch[0] = ch;
+            strcat(str, aux_ch);
             break;
         }
-        wrefresh(screen_msg);
     }
+    return str;
+}
+
+void split_format_message(char *full_msg, char *dest, char *body)
+{
+    // mensagem no formato usuario_destino:corpo_mensagem\n
+    // usuario de destino
+    char *token;
+    token = strtok(full_msg, ":");
+    strcpy(dest, token);
+    token = strtok(NULL, ":");
+    strcpy(body, token);
 }
 
 void intHandler(int sg)
@@ -273,19 +293,16 @@ int main()
     scroll(screen_msg);
     idlok(screen_msg, TRUE);
 
-    // ativar reconhecimento das teclas de direcao e mouse
+    // ativar reconhecimento das teclas de direcao e mouse na tela de mensagens e input
     keypad(screen_msg, TRUE);
+    keypad(screen_input, TRUE);
     cbreak();
-
-    pthread_t thread_keypad;
-
-    pthread_create(&thread_keypad, NULL, wait_keypad, NULL);
 
     print_screen_msg("Digite o seu nome de usuario:");
 
     do
     {
-        wscanw(screen_msg, "%s", username);
+        input_text(screen_msg, username);
         if (strcmp(username, "all") == 0)
         {
             print_screen_msg("Voce nao pode escolher este nome de usuario\n");
@@ -321,7 +338,7 @@ int main()
 
     pthread_create(&ids[0], NULL, threceber, NULL); //inicia a thread que recebe mensagens
 
-    char oper[12]; //variavel para receber o comando
+    char oper[12] = ""; //variavel para receber o comando
     msgtp msg;
 
     while (1)
@@ -329,7 +346,9 @@ int main()
         wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
         wprintw(screen_input, "Comando: ");
         wrefresh(screen_input);
-        wscanw(screen_input, "%s", oper);
+        input_text(screen_input, oper);
+        wprintw(screen_msg, "comando: %s\n", oper);
+        wrefresh(screen_msg);
 
         if (strcmp(oper, "exit") == 0)
         { // comando exit
@@ -341,10 +360,14 @@ int main()
         }
         else if (strcmp(oper, "enviar") == 0)
         { //comando enviar
+            char msg_aux[501] = "";
             print_screen_msg("Digite a mensagem no formato destino:mensagem\n");
             wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
             wprintw(screen_input, "Mensagem: ");
-            wscanw(screen_input, " %[^:]:%[^\n]", msg.para, msg.corpo);
+            input_text(screen_input, msg_aux);
+            // sprintf(msg.para, msg.corpo, "%[^:]:%[^\n]", msg_aux);
+            split_format_message(msg_aux, msg.para, msg.corpo);
+            wrefresh(screen_msg);
             wrefresh(screen_input);
 
             strcpy(msg.de, username);

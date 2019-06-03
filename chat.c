@@ -158,6 +158,28 @@ void split_format_message(char *full_msg, char *dest, char *body)
         body = "";
 }
 
+void split_format_message_full(char *full_msg, char *usersrc, char *dest, char *body)
+{
+    // mensagem no formato usuario_origem:usuario_destino:corpo_mensagem\n
+    // usuario de destino
+    char *token;
+    token = strtok(full_msg, ":");
+    if (token != NULL)
+        strcpy(usersrc, token);
+    else
+        usersrc = "";
+    token = strtok(NULL, ":");
+    if (token != NULL)
+        strcpy(dest, token);
+    else
+        dest = "";
+    token = strtok(NULL, ":");
+    if (token != NULL)
+        strcpy(body, token);
+    else
+        body = "";
+}
+
 void intHandler(int sg)
 {
     //handler do ctrl+c que manda o usuario usar o comando exit
@@ -207,6 +229,7 @@ void *threceber(void *s)
     //thread que recebe mensagem
 
     msgtp msg;
+    char full_msg[523];
     mqd_t receber;
 
     //abre a fila para recebimento
@@ -220,11 +243,13 @@ void *threceber(void *s)
     while (1)
     { //fica em loop esperando novas mensagens
 
-        if ((mq_receive(receber, (char *)&msg, sizeof(msg), NULL)) < 0)
+        if ((mq_receive(receber, (char *)full_msg, sizeof(full_msg), NULL)) < 0)
         {
             perror("mq_receive erro\n");
             exit(1);
         }
+        
+        split_format_message_full(full_msg,msg.de,msg.para,msg.corpo);
 
         if (strcmp("all", msg.para) == 0)
         { //formato de exibição caso seja recebido um broadcast
@@ -250,9 +275,21 @@ void *thenviar(void *s)
 
     int ret, try
         = 0;
-    mqd_t enviar;
     msgtp msg;
-    msg = *(msgtp *)s; //faz o cast do void recebido para struct msgtp
+
+    char full_msg[523]="";
+    strcat(full_msg,username);
+    strcat(full_msg,":");
+    strcat(full_msg,(char *)s);
+
+    split_format_message((char *)s, msg.para, msg.corpo);
+    strcpy(msg.de, username);
+      
+    
+
+    mqd_t enviar;
+    
+    //msg = *(msgtp *)s; //faz o cast do void recebido para struct msgtp
     char string_formated[600];
 
     if (strcmp(msg.para, "all") == 0)
@@ -294,7 +331,7 @@ void *thenviar(void *s)
 
             do
             {
-                ret = mq_send(enviar, (void *)&msg, sizeof(msg), 0);
+                ret = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
                 try
                     ++;
             } while (ret < 0 && try < 3); //tenta enviar a mensagem 3 vezes
@@ -327,7 +364,7 @@ void *thenviar(void *s)
 
         do
         {
-            ret = mq_send(enviar, (void *)&msg, sizeof(msg), 0);
+            ret = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
             try
                 ++;
         } while (ret < 0 && try < 3); //tenta enviar a mensagem 3 vezes
@@ -459,13 +496,10 @@ int main()
             input_text(screen_input, msg_aux, size_message);
             wclear(screen_input);
             // sprintf(msg.para, msg.corpo, "%[^:]:%[^\n]", msg_aux);
-            split_format_message(msg_aux, msg.para, msg.corpo);
             wrefresh(screen_msg);
             wrefresh(screen_input);
-
-            strcpy(msg.de, username);
             //cria uma thread que faz o envio da mensagem
-            pthread_create(&ids[1], NULL, thenviar, (void *)&msg);
+            pthread_create(&ids[1], NULL, thenviar, (void *)msg_aux);
             pthread_join(ids[1], NULL);
         }
 

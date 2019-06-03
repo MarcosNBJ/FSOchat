@@ -191,6 +191,8 @@ void list()
 
     //funcao que lista os usuarios disponiveis
     struct dirent *de;
+    char diruser[16]="chat-";
+    strcat(diruser,username);
 
     DIR *dr = opendir("/dev/mqueue"); //abre o diretorio
 
@@ -208,9 +210,9 @@ void list()
     {
 
         //itera pelos elementos no diretorio
-        if (strncmp("chat-", de->d_name, 5) != 0)
+        if (strncmp("chat-", de->d_name, 5) != 0 || strcmp(de->d_name,diruser)==0)
         {
-            //caso nao seja uma fila de mensagens do nosso programa
+            //caso nao seja uma fila de mensagens do nosso programa ou seja a fila do proprio usuario
             continue;
         }
 

@@ -341,7 +341,7 @@ void *thenviar(void *s)
             if (ret < 0)
             {
                 //erro retornado se não foi possível enviar mensagem
-                sprintf(string_formated, "ERRO %s:%s:%s", msg.de, msg.para, msg.corpo);
+                sprintf(string_formated, "ERRO %s:%s:%s", msg.de, &de->d_name[5], msg.corpo);
                 print_screen_msg(string_formated);
             }
 

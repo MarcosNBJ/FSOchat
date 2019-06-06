@@ -431,12 +431,15 @@ int main()
 
     do
     {
-        input_text(screen_input, username, 11);
+        input_text(screen_msg, username, 11);
         if (strcmp(username, "all") == 0)
         {
             print_screen_msg("Voce nao pode escolher este nome de usuario, por favor digite outro");
             userflag = 1;
-        }else{
+        }else if (strcmp(username, "exit") == 0){
+           close_program("");
+        }
+        else{
            userflag = 0;
         }
     } while (userflag == 1); //pede para que o usuario entre com seu login, que não pode ser "all"

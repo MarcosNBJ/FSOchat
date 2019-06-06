@@ -436,6 +436,8 @@ int main()
         {
             print_screen_msg("Voce nao pode escolher este nome de usuario");
             userflag = 1;
+        }else{
+           userflag = 0;
         }
     } while (userflag == 1); //pede para que o usuario entre com seu login, que não pode ser "all"
 

@@ -431,10 +431,10 @@ int main()
 
     do
     {
-        input_text(screen_msg, username, 10);
+        input_text(screen_input, username, 11);
         if (strcmp(username, "all") == 0)
         {
-            print_screen_msg("Voce nao pode escolher este nome de usuario");
+            print_screen_msg("Voce nao pode escolher este nome de usuario, por favor digite outro");
             userflag = 1;
         }else{
            userflag = 0;

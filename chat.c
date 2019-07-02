@@ -1,15 +1,16 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <locale.h>
 #include <mqueue.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <string.h>
+#include <ncurses.h>
 #include <pthread.h>
 #include <signal.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <ncurses.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 // constantes uteis
 #define size_message 523
@@ -399,6 +400,8 @@ void view_log()
 
 int main()
 {
+    setlocale(LC_ALL, "");
+
     WINDOW *screen_box;
     signal(SIGINT, intHandler); //implementa o handler para o ctrl+c
     int userflag = 0;           //variavel para ajduar na verificação do nome de usuario

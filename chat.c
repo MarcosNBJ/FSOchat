@@ -33,6 +33,11 @@ int log_msg_current_size = 0;
 int last_max_index_shown = 0;
 int last_min_index_shown = 0;
 
+// lista de mensagens enviadas
+char messages_sent[5000][size_message];
+// guarda tamanho atual da lista de mensagens enviadas
+int msg_index = 0;
+
 struct
 {
     char de[11];     //usuario origem
@@ -159,26 +164,44 @@ void split_format_message(char *full_msg, char *dest, char *body)
         body = "";
 }
 
-void split_format_message_full(char *full_msg, char *usersrc, char *dest, char *body)
+void split_format_message_full(char *full_msg, char *sender, char *dest,
+                               char *body, char *index_msg, char *msg_type)
 {
+    /*
+        Funcao para cortar as mensagens por partes, atraves dos ":"
+    */
     // mensagem no formato usuario_origem:usuario_destino:corpo_mensagem\n
     // usuario de destino
     char *token;
     token = strtok(full_msg, ":");
-    if (token != NULL)
-        strcpy(usersrc, token);
+    if (token != NULL && sender != NULL)
+        strcpy(sender, token);
     else
-        usersrc = "";
+        sender = "";
     token = strtok(NULL, ":");
-    if (token != NULL)
+    if (token != NULL && dest != NULL)
         strcpy(dest, token);
     else
         dest = "";
     token = strtok(NULL, ":");
-    if (token != NULL)
+    if (token != NULL && body != NULL)
         strcpy(body, token);
     else
         body = "";
+    token = strtok(NULL, ":");
+    if (token != NULL && index_msg != NULL)
+    {
+        strcpy(index_msg, token);
+    }
+    else
+        index_msg = "-1";
+    token = strtok(NULL, ":");
+    if (token != NULL && msg_type != NULL)
+    {
+        strcpy(msg_type, token);
+    }
+    else
+        msg_type = "msg";
 }
 
 void intHandler(int sg)
@@ -192,17 +215,17 @@ void list()
 
     //funcao que lista os usuarios disponiveis
     struct dirent *de;
-    char diruser[16]="chat-";
-    strcat(diruser,username);
+    char diruser[16] = "chat-";
+    strcat(diruser, username);
 
     DIR *dr = opendir("/dev/mqueue"); //abre o diretorio
 
-    wprintw(screen_msg, "\n\t** Usuários Conectados **\n\n");
+    print_screen_msg("\n\t** Usuários Conectados **\n\n");
     wrefresh(screen_msg);
 
     if (dr == NULL)
     {
-        wprintw(screen_msg, "Could not open current directory\n");
+        print_screen_msg("Could not open current directory\n");
         wrefresh(screen_msg);
         return;
     }
@@ -211,19 +234,101 @@ void list()
     {
 
         //itera pelos elementos no diretorio
-        if (strncmp("chat-", de->d_name, 5) != 0 || strcmp(de->d_name,diruser)==0)
+        if (strncmp("chat-", de->d_name, 5) != 0 || strcmp(de->d_name, diruser) == 0)
         {
             //caso nao seja uma fila de mensagens do nosso programa ou seja a fila do proprio usuario
             continue;
         }
 
         //printa apenas o nome do usuario
-        wprintw(screen_msg, "\t\t- %s\n", &de->d_name[5]);
+        char name[11];
+        sprintf(name, "\t\t- %s\n", &de->d_name[5]);
+        print_screen_msg(name);
         wrefresh(screen_msg);
     }
-    wprintw(screen_msg, "\n");
+    print_screen_msg("\n");
     wrefresh(screen_msg);
     closedir(dr);
+}
+
+void send_msg_verification(char *dest, char *index_msg_received, char *msg_type)
+{
+    /*
+        Funcao para enviar as mensagens de verificacao de check e confirm
+    */
+    // fila do usuario para mandar a mensagem de verificacao check, ou confirmacao valid/invalid
+    char queue[17] = "/chat-";
+    strcat(queue, dest);
+    char string_formated[600];
+
+    mqd_t open;
+    int try_send = 0;
+    int ret;
+
+    // construir formato de mensagem de verificacao username:dest:<empty_msg>:index_msg:<msg_type>
+    // type_msg = tipo de mensagem(msg, check, valid, invalid)
+    char full_msg_check[50] = "";
+    sprintf(full_msg_check, "%s:%s:msg_empty:%s:%s", username, dest, index_msg_received, msg_type);
+
+    //abre a fila do usuario
+    if ((open = mq_open(queue, O_WRONLY)) < 0)
+    {
+        sprintf(string_formated, "UNKNOWN USER %s", dest); //erro de usuario inexistente
+        print_screen_msg(string_formated);
+    }
+
+    do
+    {
+        ret = mq_send(open, (void *)full_msg_check, sizeof(full_msg_check), 0);
+        try_send++;
+    } while (ret < 0 && try_send < 3); //tenta enviar a mensagem 3 vezes
+
+    if (ret < 0)
+    {
+        //erro retornado se não foi possível enviar mensagem
+        sprintf(string_formated, "ERRO %s:%s:%s", username, dest, index_msg_received);
+        print_screen_msg(string_formated);
+    }
+    else
+    {
+        // if (strcmp(msg_type, "check") == 0)
+        //     sprintf(string_formated, "Perguntar Assinatura >>> %s:%s", dest, index_msg_received);
+        // else
+        //     sprintf(string_formated, "Confirmacao Enviada >>> %s:%s", dest, index_msg_received);
+        // print_screen_msg(string_formated);
+        // adiciona mensagem enviada na lista
+    }
+    mq_close(open);
+}
+
+void check_signature(char *sender, char *index_msg_received)
+{
+    /*
+        Funcao para verficar autenticidade de Mensagens Recebidas
+    */
+    send_msg_verification(sender, index_msg_received, "check");
+}
+
+void confirm_signature(char *receiver, char *index_msg_received)
+{
+    /*
+        Funcao para validar ou nao que foi o usuario corrente que enviou a mensagem
+    */
+    int aux_index = atoi(index_msg_received);
+    char msg_receiver[15] = "";
+    // verificar na lista de mensagens enviadas se o destinatario eh o msm que esta pedindo a
+    // confirmacao de mensagem
+    split_format_message_full(messages_sent[aux_index], NULL, msg_receiver, NULL, NULL, NULL);
+    if (strcmp(receiver, msg_receiver) == 0)
+    {
+        // print_screen_msg("Mensagem Confirmada");
+        send_msg_verification(receiver, index_msg_received, "valid");
+    }
+    else
+    {
+        // print_screen_msg("Mensagem Invalida");
+        send_msg_verification(receiver, index_msg_received, "invalid");
+    }
 }
 
 void *threceber(void *s)
@@ -251,28 +356,50 @@ void *threceber(void *s)
             perror("mq_receive erro\n");
             exit(1);
         }
-        
-        split_format_message_full(full_msg,msg.de,msg.para,msg.corpo);
-
-        if (strcmp("all", msg.para) == 0)
-        { //formato de exibição caso seja recebido um broadcast
-            sprintf(string_formated, "Broadcast << %s: %s", msg.de, msg.corpo);
-            print_screen_msg(string_formated);
-            wrefresh(screen_input);
+        char index_msg[6];
+        char msg_type[10];
+        split_format_message_full(full_msg, msg.de, msg.para, msg.corpo, index_msg, msg_type);
+        // Verifica se é uma mensagem normal:msg ou de verificar assinatura:msg_type
+        if (strcmp(msg_type, "check") == 0)
+        {
+            // É uma mensagem de verificacao, entao apenas verifique e envie a resposta
+            confirm_signature(msg.de, index_msg);
+        }
+        else if (strcmp(msg_type, "msg") == 0)
+        {
+            // É uma mensagem comum, entao cheque a autenticidade da mensagem
+            check_signature(msg.de, index_msg);
         }
         else
-        { //formato de exibição normal
-            sprintf(string_formated, "Mensagem Recebida <<< %s: %s", msg.de, msg.corpo);
-            // adiciona ao log
-            print_screen_msg(string_formated);
-            wrefresh(screen_input);
+        {
+            if (strcmp("all", msg.para) == 0)
+            { //formato de exibição caso seja recebido um broadcast
+                sprintf(string_formated, "Broadcast << %s: %s", msg.de, msg.corpo);
+                print_screen_msg(string_formated);
+                wrefresh(screen_input);
+            }
+            else
+            {
+                char result[20] = "";
+                // É uma mensagem com a resposta se a mensagem é valida ou nao
+                if (strcmp(msg_type, "valid") == 0)
+                    strcat(result, "Autenticada");
+                else
+                    strcat(result, "Nao Autenticada");
+
+                //formato de exibição normal
+                sprintf(string_formated, "Mensagem Recebida <<< %s:%s\t(%s)", msg.de, msg.corpo, result);
+                // adiciona ao log
+                print_screen_msg(string_formated);
+                wrefresh(screen_input);
+            }
         }
     }
 
     pthread_exit(NULL);
 }
 
-void *thenviar(void *s)
+void *thenviar(void *dest_and_msg)
 {
     //thread que envia a mensagem
 
@@ -280,19 +407,19 @@ void *thenviar(void *s)
         = 0;
     msgtp msg;
 
-    char full_msg[523]="";
-    strcat(full_msg,username);
-    strcat(full_msg,":");
-    strcat(full_msg,(char *)s);
+    // Formato de Mensagem username:dest:<msg_content>:index:<msg_type>
+    char full_msg[523] = "";
+    // strcat(full_msg, username);
+    // strcat(full_msg, ":");
+    // strcat(full_msg, (char *)s);
+    // sprintf(full_msg, "%s:%d:msg", full_msg, msg_index);
+    sprintf(full_msg, "%s:%s:%d:msg", username, (char *)dest_and_msg, msg_index);
 
-    split_format_message((char *)s, msg.para, msg.corpo);
+    split_format_message((char *)dest_and_msg, msg.para, msg.corpo);
     strcpy(msg.de, username);
-      
-    
 
     mqd_t enviar;
-    
-    //msg = *(msgtp *)s; //faz o cast do void recebido para struct msgtp
+
     char string_formated[600];
 
     if (strcmp(msg.para, "all") == 0)
@@ -382,6 +509,9 @@ void *thenviar(void *s)
         {
             sprintf(string_formated, "Mensagem Enviada >>> %s:%s", msg.para, msg.corpo);
             print_screen_msg(string_formated);
+            // adiciona mensagem enviada na lista
+            strcpy(messages_sent[msg_index], full_msg);
+            msg_index++;
         }
 
         mq_close(enviar);
@@ -400,7 +530,7 @@ void view_log()
 
 int main()
 {
-    setlocale(LC_ALL, "");
+    // setlocale(LC_ALL, "");
 
     WINDOW *screen_box;
     signal(SIGINT, intHandler); //implementa o handler para o ctrl+c
@@ -439,11 +569,14 @@ int main()
         {
             print_screen_msg("Voce nao pode escolher este nome de usuario, por favor digite outro");
             userflag = 1;
-        }else if (strcmp(username, "exit") == 0){
-           close_program("");
         }
-        else{
-           userflag = 0;
+        else if (strcmp(username, "exit") == 0)
+        {
+            close_program("");
+        }
+        else
+        {
+            userflag = 0;
         }
     } while (userflag == 1); //pede para que o usuario entre com seu login, que não pode ser "all"
 

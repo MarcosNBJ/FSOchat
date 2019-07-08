@@ -410,6 +410,8 @@ void *thenviar(void *dest_and_msg)
         struct dirent *de;
         char envfila2[17] = "/";
         DIR *dr = opendir("/dev/mqueue");
+        char receiver_users[500][20];
+        int user_count = 0;
 
         if (dr == NULL)
         {
@@ -450,12 +452,25 @@ void *thenviar(void *dest_and_msg)
             if (response_send < 0)
             {
                 //erro retornado se não foi possível enviar mensagem
-                sprintf(string_formated, "ERRO %s:%s:%s", msg.sender, &de->d_name[5], msg.body);
+                sprintf(string_formated, "ERRO %s:%s", &de->d_name[5], msg.body);
                 print_screen_msg(string_formated);
+            }
+            else
+            {
+                // usuarios que receberam a mensagem
+                strcpy(receiver_users[user_count], &de->d_name[5]);
+                user_count++;
             }
 
             mq_close(enviar);
         }
+        sprintf(string_formated, "BroadCast Enviado >>> ");
+        for (int i = 0; i < user_count; i++)
+        {
+            strcat(string_formated, receiver_users[i]);
+            strcat(string_formated, ", ");
+        }
+        print_screen_msg(string_formated);
 
         closedir(dr);
     }

@@ -40,9 +40,9 @@ int msg_index = 0;
 
 struct
 {
-    char de[11];     //usuario origem
-    char para[11];   //usuario destino
-    char corpo[501]; //corpo da mensagem
+    char sender[11];   //usuario origem
+    char receiver[11]; //usuario destino
+    char body[501];    //corpo da mensagem
 } typedef msgtp;
 
 void add_message_log(char *msg)
@@ -340,20 +340,20 @@ void *threceber(void *s)
         }
         char index_msg[10] = "";
         // char msg_type[10];
-        split_format_message_full(full_msg, msg.de, msg.para, msg.corpo, index_msg);
+        split_format_message_full(full_msg, msg.sender, msg.receiver, msg.body, index_msg);
 
         // Verifica se é uma mensagem normal:msg ou de verificar assinatura
         if (index_msg[strlen(index_msg) - 1] == '?')
         {
             // É uma mensagem de verificacao '?', entao apenas
             // verifique e envie a resposta 'y' ou 'n'
-            confirm_signature(msg.de, msg.corpo, index_msg);
+            confirm_signature(msg.sender, msg.body, index_msg);
         }
         else if (index_msg[strlen(index_msg) - 1] == 'y' || index_msg[strlen(index_msg) - 1] == 'n')
         {
             char tag_msg[20] = "Mensagem Recebida";
             // Mensagem de confirmacao "y": autenticada ou "n": nao autenticada
-            if (strcmp("all", msg.para) == 0)
+            if (strcmp("all", msg.receiver) == 0)
             { //caso seja recebido um broadcast
                 strcpy(tag_msg, "BroadCast");
             }
@@ -365,7 +365,7 @@ void *threceber(void *s)
             else
                 strcat(result, "Nao Autenticada");
 
-            sprintf(string_formated, "%s <<< %s:%s\t(%s)", tag_msg, msg.de, msg.corpo, result);
+            sprintf(string_formated, "%s <<< %s:%s\t(%s)", tag_msg, msg.sender, msg.body, result);
             // adiciona ao log
             print_screen_msg(string_formated);
             wrefresh(screen_input);
@@ -374,7 +374,7 @@ void *threceber(void *s)
         {
             // É uma mensagem comum, entao cheque a autenticidade da mensagem
             // enviando uma mensagem de check "?"
-            check_signature(msg.de, msg.corpo, index_msg);
+            check_signature(msg.sender, msg.body, index_msg);
         }
     }
 
@@ -387,8 +387,7 @@ void *thenviar(void *dest_and_msg)
         thread que envia a mensagem
     */
 
-    int ret, try
-        = 0;
+    int response_send, try_send = 0;
     msgtp msg;
 
     // Formato de Mensagem username:dest:<msg_content>:index:<msg_type>
@@ -397,15 +396,15 @@ void *thenviar(void *dest_and_msg)
     // teste de falsificacao de assinatura
     // sprintf(full_msg, "gustavo:%s:%d", (char *)dest_and_msg, msg_index);
 
-    split_format_message((char *)dest_and_msg, msg.para, msg.corpo);
-    strcpy(msg.de, username);
-    // strcpy(msg.de, "gustavo");
+    split_format_message((char *)dest_and_msg, msg.receiver, msg.body);
+    strcpy(msg.sender, username);
+    // strcpy(msg.sender, "gustavo");
 
     mqd_t enviar;
 
     char string_formated[600];
 
-    if (strcmp(msg.para, "all") == 0)
+    if (strcmp(msg.receiver, "all") == 0)
     { //se broadcast
 
         struct dirent *de;
@@ -444,15 +443,14 @@ void *thenviar(void *dest_and_msg)
 
             do
             {
-                ret = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
-                try
-                    ++;
-            } while (ret < 0 && try < 3); //tenta enviar a mensagem 3 vezes
+                response_send = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
+                try_send++;
+            } while (response_send < 0 && try_send < 3); //tenta enviar a mensagem 3 vezes
 
-            if (ret < 0)
+            if (response_send < 0)
             {
                 //erro retornado se não foi possível enviar mensagem
-                sprintf(string_formated, "ERRO %s:%s:%s", msg.de, &de->d_name[5], msg.corpo);
+                sprintf(string_formated, "ERRO %s:%s:%s", msg.sender, &de->d_name[5], msg.body);
                 print_screen_msg(string_formated);
             }
 
@@ -463,34 +461,32 @@ void *thenviar(void *dest_and_msg)
     }
     else
     { //Se mensagem normal
-
         char envfila[17] = "/chat-";
-        strcat(envfila, msg.para); //junta o nome do destino com o "/chat-" para formar o nome da fila destino
+        strcat(envfila, msg.receiver); //junta o nome do destino com o "/chat-" para formar o nome da fila destino
 
         //abre a fila de destino
         if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
         {
-            sprintf(string_formated, "UNKNOWN USER %s", msg.para); //erro de usuario inexistente
+            sprintf(string_formated, "UNKNOWN USER %s", msg.receiver); //erro de usuario inexistente
             print_screen_msg(string_formated);
             return NULL;
         }
 
         do
         {
-            ret = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
-            try
-                ++;
-        } while (ret < 0 && try < 3); //tenta enviar a mensagem 3 vezes
+            response_send = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
+            try_send++;
+        } while (response_send < 0 && try_send < 3); //tenta enviar a mensagem 3 vezes
 
-        if (ret < 0)
+        if (response_send < 0)
         {
             //erro retornado se não foi possível enviar mensagem
-            sprintf(string_formated, "ERRO %s:%s:%s", msg.de, msg.para, msg.corpo);
+            sprintf(string_formated, "ERRO %s:%s:%s", msg.sender, msg.receiver, msg.body);
             print_screen_msg(string_formated);
         }
         else
         {
-            sprintf(string_formated, "Mensagem Enviada >>> %s:%s", msg.para, msg.corpo);
+            sprintf(string_formated, "Mensagem Enviada >>> %s:%s", msg.receiver, msg.body);
             print_screen_msg(string_formated);
             // adiciona mensagem enviada na lista, com destinatario e codigo
             strcpy(messages_sent[msg_index], full_msg);
@@ -499,7 +495,6 @@ void *thenviar(void *dest_and_msg)
 
         mq_close(enviar);
     }
-
     pthread_exit(NULL);
 }
 
@@ -621,7 +616,7 @@ int main()
             wprintw(screen_input, "Mensagem: ");
             input_text(screen_input, msg_aux, size_message);
             wclear(screen_input);
-            // sprintf(msg.para, msg.corpo, "%[^:]:%[^\n]", msg_aux);
+            // sprintf(msg.receiver, msg.body, "%[^:]:%[^\n]", msg_aux);
             wrefresh(screen_msg);
             wrefresh(screen_input);
             //cria uma thread que faz o envio da mensagem

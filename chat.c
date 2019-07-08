@@ -25,7 +25,7 @@ int height, width, height_screen_msg, init_height_screen_input;
 char userfila[17] = "/chat-";
 char username[11];
 
-// historico de mensagens enviadas ou recebidas
+// historico de prints na tela
 char message_log[5000][size_message];
 // guarda tamanho atual do log
 int log_msg_current_size = 0;
@@ -43,7 +43,6 @@ struct
     char de[11];     //usuario origem
     char para[11];   //usuario destino
     char corpo[501]; //corpo da mensagem
-
 } typedef msgtp;
 
 void add_message_log(char *msg)
@@ -165,7 +164,7 @@ void split_format_message(char *full_msg, char *dest, char *body)
 }
 
 void split_format_message_full(char *full_msg, char *sender, char *dest,
-                               char *body, char *index_msg, char *msg_type)
+                               char *body, char *index_msg)
 {
     /*
         Funcao para cortar as mensagens por partes, atraves dos ":"
@@ -194,14 +193,7 @@ void split_format_message_full(char *full_msg, char *sender, char *dest,
         strcpy(index_msg, token);
     }
     else
-        index_msg = "-1";
-    token = strtok(NULL, ":");
-    if (token != NULL && msg_type != NULL)
-    {
-        strcpy(msg_type, token);
-    }
-    else
-        msg_type = "msg";
+        index_msg = "";
 }
 
 void intHandler(int sg)
@@ -251,7 +243,7 @@ void list()
     closedir(dr);
 }
 
-void send_msg_verification(char *dest, char *index_msg_received, char *msg_type)
+void send_msg_verification(char *dest, char *body, char *index_msg_received)
 {
     /*
         Funcao para enviar as mensagens de verificacao de check e confirm
@@ -268,7 +260,7 @@ void send_msg_verification(char *dest, char *index_msg_received, char *msg_type)
     // construir formato de mensagem de verificacao username:dest:<empty_msg>:index_msg:<msg_type>
     // type_msg = tipo de mensagem(msg, check, valid, invalid)
     char full_msg_check[50] = "";
-    sprintf(full_msg_check, "%s:%s:msg_empty:%s:%s", username, dest, index_msg_received, msg_type);
+    sprintf(full_msg_check, "%s:%s:%s:%s", username, dest, body, index_msg_received);
 
     //abre a fila do usuario
     if ((open = mq_open(queue, O_WRONLY)) < 0)
@@ -286,49 +278,39 @@ void send_msg_verification(char *dest, char *index_msg_received, char *msg_type)
     if (ret < 0)
     {
         //erro retornado se não foi possível enviar mensagem
-        sprintf(string_formated, "ERRO %s:%s:%s", username, dest, index_msg_received);
+        sprintf(string_formated, "ERRO Assinatura %s:%s:%s", username, dest, index_msg_received);
         print_screen_msg(string_formated);
-    }
-    else
-    {
-        // if (strcmp(msg_type, "check") == 0)
-        //     sprintf(string_formated, "Perguntar Assinatura >>> %s:%s", dest, index_msg_received);
-        // else
-        //     sprintf(string_formated, "Confirmacao Enviada >>> %s:%s", dest, index_msg_received);
-        // print_screen_msg(string_formated);
-        // adiciona mensagem enviada na lista
     }
     mq_close(open);
 }
 
-void check_signature(char *sender, char *index_msg_received)
+void check_signature(char *sender, char *body, char *index_msg_received)
 {
     /*
         Funcao para verficar autenticidade de Mensagens Recebidas
     */
-    send_msg_verification(sender, index_msg_received, "check");
+    sprintf(index_msg_received, "%s?", index_msg_received);
+    send_msg_verification(sender, body, index_msg_received);
 }
 
-void confirm_signature(char *receiver, char *index_msg_received)
+void confirm_signature(char *receiver, char *body, char *index_msg_received)
 {
     /*
         Funcao para validar ou nao que foi o usuario corrente que enviou a mensagem
     */
+
     int aux_index = atoi(index_msg_received);
     char msg_receiver[15] = "";
+    char msg_body[501] = "";
     // verificar na lista de mensagens enviadas se o destinatario eh o msm que esta pedindo a
     // confirmacao de mensagem
-    split_format_message_full(messages_sent[aux_index], NULL, msg_receiver, NULL, NULL, NULL);
-    if (strcmp(receiver, msg_receiver) == 0)
-    {
-        // print_screen_msg("Mensagem Confirmada");
-        send_msg_verification(receiver, index_msg_received, "valid");
-    }
+    split_format_message_full(messages_sent[aux_index], NULL, msg_receiver, msg_body, NULL);
+    if (aux_index <= msg_index && strcmp(receiver, msg_receiver) == 0 && strcmp(body, msg_body) == 0)
+        // Mensagem Confirmada
+        index_msg_received[strlen(index_msg_received) - 1] = 'y';
     else
-    {
-        // print_screen_msg("Mensagem Invalida");
-        send_msg_verification(receiver, index_msg_received, "invalid");
-    }
+        index_msg_received[strlen(index_msg_received) - 1] = 'n';
+    send_msg_verification(receiver, body, index_msg_received);
 }
 
 void *threceber(void *s)
@@ -356,22 +338,21 @@ void *threceber(void *s)
             perror("mq_receive erro\n");
             exit(1);
         }
-        char index_msg[6];
-        char msg_type[10];
-        split_format_message_full(full_msg, msg.de, msg.para, msg.corpo, index_msg, msg_type);
-        // Verifica se é uma mensagem normal:msg ou de verificar assinatura:msg_type
-        if (strcmp(msg_type, "check") == 0)
+        char index_msg[10] = "";
+        // char msg_type[10];
+        split_format_message_full(full_msg, msg.de, msg.para, msg.corpo, index_msg);
+
+        // Verifica se é uma mensagem normal:msg ou de verificar assinatura
+        if (index_msg[strlen(index_msg) - 1] == '?')
         {
-            // É uma mensagem de verificacao, entao apenas verifique e envie a resposta
-            confirm_signature(msg.de, index_msg);
+            // É uma mensagem de verificacao '?', entao apenas
+            // verifique e envie a resposta 'y' ou 'n'
+            print_screen_msg(index_msg);
+            confirm_signature(msg.de, msg.corpo, index_msg);
         }
-        else if (strcmp(msg_type, "msg") == 0)
+        else if (index_msg[strlen(index_msg) - 1] == 'y' || index_msg[strlen(index_msg) - 1] == 'n')
         {
-            // É uma mensagem comum, entao cheque a autenticidade da mensagem
-            check_signature(msg.de, index_msg);
-        }
-        else
-        {
+            // Mensagem de confirmacao "y": autenticada ou "n": nao autenticada
             if (strcmp("all", msg.para) == 0)
             { //formato de exibição caso seja recebido um broadcast
                 sprintf(string_formated, "Broadcast << %s: %s", msg.de, msg.corpo);
@@ -382,7 +363,8 @@ void *threceber(void *s)
             {
                 char result[20] = "";
                 // É uma mensagem com a resposta se a mensagem é valida ou nao
-                if (strcmp(msg_type, "valid") == 0)
+                print_screen_msg(index_msg);
+                if (index_msg[strlen(index_msg) - 1] == 'y')
                     strcat(result, "Autenticada");
                 else
                     strcat(result, "Nao Autenticada");
@@ -394,6 +376,14 @@ void *threceber(void *s)
                 wrefresh(screen_input);
             }
         }
+        else
+        {
+            // É uma mensagem comum, entao cheque a autenticidade da mensagem
+            // enviando uma mensagem de check "?"
+            print_screen_msg("Mensagem Recebida");
+            print_screen_msg(index_msg);
+            check_signature(msg.de, msg.corpo, index_msg);
+        }
     }
 
     pthread_exit(NULL);
@@ -401,7 +391,9 @@ void *threceber(void *s)
 
 void *thenviar(void *dest_and_msg)
 {
-    //thread que envia a mensagem
+    /*
+        thread que envia a mensagem
+    */
 
     int ret, try
         = 0;
@@ -409,14 +401,12 @@ void *thenviar(void *dest_and_msg)
 
     // Formato de Mensagem username:dest:<msg_content>:index:<msg_type>
     char full_msg[523] = "";
-    // strcat(full_msg, username);
-    // strcat(full_msg, ":");
-    // strcat(full_msg, (char *)s);
-    // sprintf(full_msg, "%s:%d:msg", full_msg, msg_index);
-    sprintf(full_msg, "%s:%s:%d:msg", username, (char *)dest_and_msg, msg_index);
+    // sprintf(full_msg, "%s:%s:%d", username, (char *)dest_and_msg, msg_index);
+    sprintf(full_msg, "gustavo:%s:%d", (char *)dest_and_msg, msg_index);
 
     split_format_message((char *)dest_and_msg, msg.para, msg.corpo);
-    strcpy(msg.de, username);
+    // strcpy(msg.de, username);
+    strcpy(msg.de, "gustavo");
 
     mqd_t enviar;
 
@@ -509,7 +499,7 @@ void *thenviar(void *dest_and_msg)
         {
             sprintf(string_formated, "Mensagem Enviada >>> %s:%s", msg.para, msg.corpo);
             print_screen_msg(string_formated);
-            // adiciona mensagem enviada na lista
+            // adiciona mensagem enviada na lista, com destinatario e codigo
             strcpy(messages_sent[msg_index], full_msg);
             msg_index++;
         }

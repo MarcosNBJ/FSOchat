@@ -347,41 +347,33 @@ void *threceber(void *s)
         {
             // É uma mensagem de verificacao '?', entao apenas
             // verifique e envie a resposta 'y' ou 'n'
-            print_screen_msg(index_msg);
             confirm_signature(msg.de, msg.corpo, index_msg);
         }
         else if (index_msg[strlen(index_msg) - 1] == 'y' || index_msg[strlen(index_msg) - 1] == 'n')
         {
+            char tag_msg[20] = "Mensagem Recebida";
             // Mensagem de confirmacao "y": autenticada ou "n": nao autenticada
             if (strcmp("all", msg.para) == 0)
-            { //formato de exibição caso seja recebido um broadcast
-                sprintf(string_formated, "Broadcast << %s: %s", msg.de, msg.corpo);
-                print_screen_msg(string_formated);
-                wrefresh(screen_input);
+            { //caso seja recebido um broadcast
+                strcpy(tag_msg, "BroadCast");
             }
-            else
-            {
-                char result[20] = "";
-                // É uma mensagem com a resposta se a mensagem é valida ou nao
-                print_screen_msg(index_msg);
-                if (index_msg[strlen(index_msg) - 1] == 'y')
-                    strcat(result, "Autenticada");
-                else
-                    strcat(result, "Nao Autenticada");
 
-                //formato de exibição normal
-                sprintf(string_formated, "Mensagem Recebida <<< %s:%s\t(%s)", msg.de, msg.corpo, result);
-                // adiciona ao log
-                print_screen_msg(string_formated);
-                wrefresh(screen_input);
-            }
+            char result[20] = "";
+            // É uma mensagem com a resposta se a mensagem é valida ou nao
+            if (index_msg[strlen(index_msg) - 1] == 'y')
+                strcat(result, "Autenticada");
+            else
+                strcat(result, "Nao Autenticada");
+
+            sprintf(string_formated, "%s <<< %s:%s\t(%s)", tag_msg, msg.de, msg.corpo, result);
+            // adiciona ao log
+            print_screen_msg(string_formated);
+            wrefresh(screen_input);
         }
         else
         {
             // É uma mensagem comum, entao cheque a autenticidade da mensagem
             // enviando uma mensagem de check "?"
-            print_screen_msg("Mensagem Recebida");
-            print_screen_msg(index_msg);
             check_signature(msg.de, msg.corpo, index_msg);
         }
     }
@@ -401,12 +393,13 @@ void *thenviar(void *dest_and_msg)
 
     // Formato de Mensagem username:dest:<msg_content>:index:<msg_type>
     char full_msg[523] = "";
-    // sprintf(full_msg, "%s:%s:%d", username, (char *)dest_and_msg, msg_index);
-    sprintf(full_msg, "gustavo:%s:%d", (char *)dest_and_msg, msg_index);
+    sprintf(full_msg, "%s:%s:%d", username, (char *)dest_and_msg, msg_index);
+    // teste de falsificacao de assinatura
+    // sprintf(full_msg, "gustavo:%s:%d", (char *)dest_and_msg, msg_index);
 
     split_format_message((char *)dest_and_msg, msg.para, msg.corpo);
-    // strcpy(msg.de, username);
-    strcpy(msg.de, "gustavo");
+    strcpy(msg.de, username);
+    // strcpy(msg.de, "gustavo");
 
     mqd_t enviar;
 

@@ -25,14 +25,6 @@ int height, width, height_screen_msg, init_height_screen_input;
 char userfila[17] = "/chat-";
 char username[11];
 
-// historico de prints na tela
-char message_log[5000][size_message];
-// guarda tamanho atual do log
-int log_msg_current_size = 0;
-// guarda os ultimo indices maximo e minimo do log mostrado na tela
-int last_max_index_shown = 0;
-int last_min_index_shown = 0;
-
 // lista de mensagens enviadas
 char messages_sent[5000][size_message];
 // guarda tamanho atual da lista de mensagens enviadas
@@ -45,13 +37,55 @@ struct
     char body[501];    //corpo da mensagem
 } typedef msgtp;
 
+struct log
+{
+    // pilha do log dos textos na tela
+    int id;
+    char text[525];
+    struct log *next;
+    struct log *last;
+} typedef log;
+
+// historico de prints na tela
+log *screen_log = NULL;  // log da tela (pilha)
+log *older_show = NULL;  // log mais antigo mostrado na tela
+log *newest_show = NULL; // log mais novo mostrado na tela
+
 void add_message_log(char *msg)
 {
-    // pega
-    char *pos_free = message_log[log_msg_current_size];
-    strcpy(pos_free, msg);
-    last_max_index_shown = log_msg_current_size;
-    log_msg_current_size++;
+    /*
+        Adiciona os textos mostrados na tela, para dentro de um log
+    */
+
+    log *text_log;
+    text_log = (log *)malloc(sizeof(log));
+
+    strcpy(text_log->text, msg);
+    if (screen_log == NULL)
+    {
+        text_log->id = 0;
+        text_log->next = NULL;
+        text_log->last = NULL;
+        // como nao ha nenhum texto, este eh o mais antigo e o mais novo
+        older_show = text_log;
+        newest_show = text_log;
+    }
+    else
+    {
+        text_log->id = screen_log->id + 1;
+        text_log->last = screen_log;
+        screen_log->next = text_log;
+    }
+    screen_log = text_log;
+    // o mais novo a ser mostrado eh sempre o ultimo resistro adicionado
+    newest_show = screen_log;
+
+    // // decidir qual eh o texto mais antigo
+    // // como a quantidade de registros ultrapassa o tamanho da tela
+    if (text_log->id > height_screen_msg)
+    {
+        older_show = older_show->next;
+    }
 }
 
 void close_program(char *bye_msg)
@@ -69,11 +103,11 @@ void print_screen_msg(char *text)
     char string_formated[size_message + 5];
     // printa uma string na tela
     // obs: nao use "\n" na string passada, pois ira bugar o log
-    sprintf(string_formated, "%d - %s", log_msg_current_size, text);
+    sprintf(string_formated, "%s", text);
     wprintw(screen_msg, "%s\n", string_formated);
     // adiciona ao log
-    add_message_log(string_formated);
     wrefresh(screen_msg);
+    add_message_log(string_formated);
 }
 
 char *input_text(WINDOW *screen, char *str, int max_size)
@@ -93,29 +127,30 @@ char *input_text(WINDOW *screen, char *str, int max_size)
         switch (ch)
         {
         case KEY_DOWN:
-            if (last_max_index_shown < log_msg_current_size && log_msg_current_size > height_screen_msg)
+            if (newest_show->next != NULL)
             {
                 // rolagem para baixo na tela de mensagens
                 wscrl(screen_msg, 1);
                 wmove(screen_msg, height_screen_msg, 0);
-                // insere novamente na tela o texto dentro do vetor
-                wprintw(screen_msg, "%s", message_log[last_max_index_shown + 2]);
-                last_max_index_shown++;
+                // atualiza o registro mais novo e mais antigo mostrado
+                newest_show = newest_show->next;
+                older_show = older_show->next;
+                wprintw(screen_msg, "%s", newest_show->text);
                 wmove(screen_msg, height_screen_msg - 1, 0);
                 wrefresh(screen_msg);
             }
             break;
         case KEY_UP:
             // rolagem para cima na tela de mensagens
-            last_min_index_shown = last_max_index_shown - height_screen_msg + 1;
-            if (last_min_index_shown >= 0)
+            if (older_show->last != NULL)
             {
                 wscrl(screen_msg, -1);
                 wmove(screen_msg, 0, 0);
-                // insere novamente na tela o texto dentro do vetor
-                wprintw(screen_msg, message_log[last_min_index_shown]);
+                // atualiza o registro mais novo e mais antigo mostrado
+                older_show = older_show->last;
+                newest_show = newest_show->last;
+                wprintw(screen_msg, older_show->text);
                 wmove(screen_msg, height_screen_msg - 1, 0);
-                last_max_index_shown--;
                 wrefresh(screen_msg);
             }
             break;
@@ -212,7 +247,7 @@ void list()
 
     DIR *dr = opendir("/dev/mqueue"); //abre o diretorio
 
-    print_screen_msg("\n\t** Usuários Conectados **\n\n");
+    print_screen_msg("\n**Usuários Conectados**\n");
     wrefresh(screen_msg);
 
     if (dr == NULL)
@@ -234,7 +269,7 @@ void list()
 
         //printa apenas o nome do usuario
         char name[11];
-        sprintf(name, "\t\t- %s\n", &de->d_name[5]);
+        sprintf(name, "\t- %s\n", &de->d_name[5]);
         print_screen_msg(name);
         wrefresh(screen_msg);
     }
@@ -513,14 +548,6 @@ void *thenviar(void *dest_and_msg)
     pthread_exit(NULL);
 }
 
-void view_log()
-{
-    for (int i = 0; i < log_msg_current_size; i++)
-    {
-        wprintw(screen_msg, "%s", message_log[i]);
-    }
-}
-
 int main()
 {
     // setlocale(LC_ALL, "");
@@ -626,9 +653,8 @@ int main()
         else if (strcmp(oper, "enviar") == 0)
         { //comando enviar
             char msg_aux[501] = "";
-            print_screen_msg("Digite a mensagem no formato destino:mensagem");
             wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
-            wprintw(screen_input, "Mensagem: ");
+            wprintw(screen_input, "Mensagem (destino:mensagem): ");
             input_text(screen_input, msg_aux, size_message);
             wclear(screen_input);
             // sprintf(msg.receiver, msg.body, "%[^:]:%[^\n]", msg_aux);

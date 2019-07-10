@@ -332,9 +332,12 @@ int main()
 
     char oper[12] = ""; //variavel para receber o comando
     msgtp msg;
-
+    
+    printf("Digite o comando\n");
     while (1)
-    {
+    {   
+
+        scanf("%s",oper);
 
         if (strcmp(oper, "exit") == 0)
         { // comando exit

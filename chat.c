@@ -8,29 +8,15 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <dirent.h>
-#include <ncurses.h>
 #include <sys/types.h>
 
 // constantes uteis
 #define size_message 523
 
-// tela da lista de mensagens e tela de input
-WINDOW *screen_msg, *screen_input;
-
-// Variaveis auxiliares para guardar as posicoes de output na tela ncurses
-int height, width, height_screen_msg, init_height_screen_input;
-
 // Variaveis para nome e fila de mensagens do usuario
 char userfila[17] = "/chat-";
 char username[11];
 
-// historico de mensagens enviadas ou recebidas
-char message_log[5000][size_message];
-// guarda tamanho atual do log
-int log_msg_current_size = 0;
-// guarda os ultimo indices maximo e minimo do log mostrado na tela
-int last_max_index_shown = 0;
-int last_min_index_shown = 0;
 
 struct
 {
@@ -40,106 +26,15 @@ struct
 
 } typedef msgtp;
 
-void add_message_log(char *msg)
-{
-    // pega
-    char *pos_free = message_log[log_msg_current_size];
-    strcpy(pos_free, msg);
-    last_max_index_shown = log_msg_current_size;
-    log_msg_current_size++;
-}
 
 void close_program(char *bye_msg)
 {
-    endwin();            // fechar tela da ncurse
     mq_unlink(userfila); // fechar fila de mensagens
     if (strlen(bye_msg) > 0)
         printf("%s", bye_msg);
-    printf("Fechando Chat\n");
     exit(0);
 }
 
-void print_screen_msg(char *text)
-{
-    char string_formated[size_message + 5];
-    // printa uma string na tela
-    // obs: nao use "\n" na string passada, pois ira bugar o log
-    sprintf(string_formated, "%d - %s", log_msg_current_size, text);
-    wprintw(screen_msg, "%s\n", string_formated);
-    // adiciona ao log
-    add_message_log(string_formated);
-    wrefresh(screen_msg);
-}
-
-char *input_text(WINDOW *screen, char *str, int max_size)
-{
-    // funcao para ler strings digitadas e para reconhecer keypads do teclado
-    // obs: todas as string chars sao iniciadas com "", antes de chamar
-    // esta funcao
-    strcpy(str, "");
-    int ch;
-    // variaveis auxiliares
-    int read_character_count = 0;
-    char aux_ch[2];
-    int ypos = 0, xpos = 0;
-
-    while ((ch = wgetch(screen)) != 10)
-    {
-        switch (ch)
-        {
-        case KEY_DOWN:
-            if (last_max_index_shown < log_msg_current_size && log_msg_current_size > height_screen_msg)
-            {
-                // rolagem para baixo na tela de mensagens
-                wscrl(screen_msg, 1);
-                wmove(screen_msg, height_screen_msg, 0);
-                // insere novamente na tela o texto dentro do vetor
-                wprintw(screen_msg, "%s", message_log[last_max_index_shown + 2]);
-                last_max_index_shown++;
-                wmove(screen_msg, height_screen_msg - 1, 0);
-                wrefresh(screen_msg);
-            }
-            break;
-        case KEY_UP:
-            // rolagem para cima na tela de mensagens
-            last_min_index_shown = last_max_index_shown - height_screen_msg + 1;
-            if (last_min_index_shown >= 0)
-            {
-                wscrl(screen_msg, -1);
-                wmove(screen_msg, 0, 0);
-                // insere novamente na tela o texto dentro do vetor
-                wprintw(screen_msg, message_log[last_min_index_shown]);
-                wmove(screen_msg, height_screen_msg - 1, 0);
-                last_max_index_shown--;
-                wrefresh(screen_msg);
-            }
-            break;
-        case 263:
-            // tecla backspace pressionada, apaga um char adicionado no buffer str
-            if (strlen(str) > 0)
-            {
-                str[strlen(str) - 1] = '\0';
-                read_character_count--;
-            }
-            // quando cursor move uma posicao para traz, apaga o lado direito
-            // da tela input passada como argumento
-            wclrtoeol(screen);
-            break;
-        default:
-            getyx(screen, ypos, xpos);
-            if (read_character_count < max_size)
-            {
-                // concatena os caracteres que nao sao keypads down, up ou backspace
-                // dentro de uma string buffer
-                aux_ch[0] = ch;
-                strcat(str, aux_ch);
-                read_character_count++;
-            }
-            break;
-        }
-    }
-    return str;
-}
 
 void split_format_message(char *full_msg, char *dest, char *body)
 {
@@ -183,7 +78,7 @@ void split_format_message_full(char *full_msg, char *usersrc, char *dest, char *
 void intHandler(int sg)
 {
     //handler do ctrl+c que manda o usuario usar o comando exit
-    print_screen_msg("Para sair digite exit");
+    printf("Para sair digite exit");
 }
 
 void list()
@@ -196,13 +91,11 @@ void list()
 
     DIR *dr = opendir("/dev/mqueue"); //abre o diretorio
 
-    wprintw(screen_msg, "\n\t** Usuários Conectados **\n\n");
-    wrefresh(screen_msg);
+    printf("\n\t** Usuários Conectados **\n\n");
 
     if (dr == NULL)
     {
-        wprintw(screen_msg, "Could not open current directory\n");
-        wrefresh(screen_msg);
+        printf("Could not open current directory\n");
         return;
     }
 
@@ -217,11 +110,9 @@ void list()
         }
 
         //printa apenas o nome do usuario
-        wprintw(screen_msg, "\t\t- %s\n", &de->d_name[5]);
-        wrefresh(screen_msg);
+        printf("\t\t- %s\n", &de->d_name[5]);
     }
-    wprintw(screen_msg, "\n");
-    wrefresh(screen_msg);
+    printf("\n");
     closedir(dr);
 }
 
@@ -256,15 +147,13 @@ void *threceber(void *s)
         if (strcmp("all", msg.para) == 0)
         { //formato de exibição caso seja recebido um broadcast
             sprintf(string_formated, "Broadcast << %s: %s", msg.de, msg.corpo);
-            print_screen_msg(string_formated);
-            wrefresh(screen_input);
+            printf("%s\n",string_formated);
         }
         else
         { //formato de exibição normal
             sprintf(string_formated, "Mensagem Recebida <<< %s: %s", msg.de, msg.corpo);
             // adiciona ao log
-            print_screen_msg(string_formated);
-            wrefresh(screen_input);
+            printf("%s\n",string_formated);
         }
     }
 
@@ -303,7 +192,7 @@ void *thenviar(void *s)
 
         if (dr == NULL)
         {
-            print_screen_msg("Could not open current directory");
+            printf("Could not open current directory\n");
             return NULL;
         }
 
@@ -327,7 +216,7 @@ void *thenviar(void *s)
             if ((enviar = mq_open(envfila2, O_WRONLY)) < 0)
             {
                 sprintf(string_formated, "UNKNOWN USER %s", &de->d_name[5]); //erro de usuario inexistente
-                print_screen_msg(string_formated);
+                printf("%s\n",string_formated);
                 continue;
             }
 
@@ -342,7 +231,7 @@ void *thenviar(void *s)
             {
                 //erro retornado se não foi possível enviar mensagem
                 sprintf(string_formated, "ERRO %s:%s:%s", msg.de, &de->d_name[5], msg.corpo);
-                print_screen_msg(string_formated);
+                printf("%s\n",string_formated);
             }
 
             mq_close(enviar);
@@ -360,7 +249,7 @@ void *thenviar(void *s)
         if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
         {
             sprintf(string_formated, "UNKNOWN USER %s", msg.para); //erro de usuario inexistente
-            print_screen_msg(string_formated);
+            printf("%s\n",string_formated);
             return NULL;
         }
 
@@ -375,12 +264,12 @@ void *thenviar(void *s)
         {
             //erro retornado se não foi possível enviar mensagem
             sprintf(string_formated, "ERRO %s:%s:%s", msg.de, msg.para, msg.corpo);
-            print_screen_msg(string_formated);
+            printf("%s\n",string_formated);
         }
         else
         {
             sprintf(string_formated, "Mensagem Enviada >>> %s:%s", msg.para, msg.corpo);
-            print_screen_msg(string_formated);
+            printf("%s\n",string_formated);
         }
 
         mq_close(enviar);
@@ -389,52 +278,21 @@ void *thenviar(void *s)
     pthread_exit(NULL);
 }
 
-void view_log()
-{
-    for (int i = 0; i < log_msg_current_size; i++)
-    {
-        wprintw(screen_msg, "%s", message_log[i]);
-    }
-}
 
 int main()
 {
-    WINDOW *screen_box;
     signal(SIGINT, intHandler); //implementa o handler para o ctrl+c
     int userflag = 0;           //variavel para ajduar na verificação do nome de usuario
 
-    initscr();                       // inicia screen do curses.h
-    getmaxyx(stdscr, height, width); // pegar altura e largura máxima da janela atual
 
-    height_screen_msg = height - 7;
-    screen_msg = newwin(height_screen_msg, width, 0, 0); // subscreen onde eh listado as mensagens
-    init_height_screen_input = height_screen_msg + 1;
-    // apenas uma subscreen para desenhar uma box sem atrapalhar a tela do input
-    screen_box = newwin(6, width, init_height_screen_input, 0);
-    // subscreen onde digita os comandos
-    screen_input = newwin(4, width - 2, init_height_screen_input + 1, 1);
-
-    // ativar scroll na tela de mensagens
-    scrollok(screen_msg, TRUE);
-    scroll(screen_msg);
-    idlok(screen_msg, TRUE);
-
-    scrollok(screen_input, TRUE);
-
-    // ativar reconhecimento das teclas de direcao e mouse na tela de mensagens e input
-    keypad(screen_msg, TRUE);
-    keypad(screen_input, TRUE);
-    cbreak();
-
-    wprintw(screen_msg, "Digite o seu nome de usuario:");
-    wrefresh(screen_msg);
+    printf("Digite o seu nome de usuario:");
 
     do
     {
-        input_text(screen_msg, username, 11);
+        scanf("%s",username);
         if (strcmp(username, "all") == 0)
         {
-            print_screen_msg("Voce nao pode escolher este nome de usuario, por favor digite outro");
+            printf("Voce nao pode escolher este nome de usuario, por favor digite outro\n");
             userflag = 1;
         }else if (strcmp(username, "exit") == 0){
            close_program("");
@@ -464,7 +322,7 @@ int main()
 
     char string_formated[501];
     sprintf(string_formated, "Fila criada, de nome %s", userfila);
-    print_screen_msg(string_formated);
+    printf("%s\n",string_formated);
 
     umask(pmask);
 
@@ -477,14 +335,6 @@ int main()
 
     while (1)
     {
-        box(screen_box, 0, 0);
-        wrefresh(screen_box);
-        wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
-        wprintw(screen_input, "Comando: ");
-        wrefresh(screen_input);
-        input_text(screen_input, oper, 12);
-        wclear(screen_input);
-        wrefresh(screen_msg);
 
         if (strcmp(oper, "exit") == 0)
         { // comando exit
@@ -497,14 +347,9 @@ int main()
         else if (strcmp(oper, "enviar") == 0)
         { //comando enviar
             char msg_aux[501] = "";
-            print_screen_msg("Digite a mensagem no formato destino:mensagem");
-            wclrtoeol(screen_input); // apaga o lado direito da linha onde estar o cursor
-            wprintw(screen_input, "Mensagem: ");
-            input_text(screen_input, msg_aux, size_message);
-            wclear(screen_input);
+            //print_screen_msg("Digite a mensagem no formato destino:mensagem");
+            scanf("%s",msg_aux);
             // sprintf(msg.para, msg.corpo, "%[^:]:%[^\n]", msg_aux);
-            wrefresh(screen_msg);
-            wrefresh(screen_input);
             //cria uma thread que faz o envio da mensagem
             pthread_create(&ids[1], NULL, thenviar, (void *)msg_aux);
             pthread_join(ids[1], NULL);
@@ -514,6 +359,5 @@ int main()
     }
 
     mq_unlink(userfila);
-    endwin();
     return 0;
 }

@@ -129,29 +129,31 @@ void list()
     closedir(dr);
 }
 
-void send_msg_verification(char *dest, char *body, char *index_msg_received)
+void send_msg_verification(char *receiver, char *body, char *index_msg_received, int is_broadcast)
 {
     /*
         Funcao para enviar as mensagens de verificacao de check e confirm
     */
     // fila do usuario para mandar a mensagem de verificacao check, ou confirmacao valid/invalid
     char queue[17] = "/chat-";
-    strcat(queue, dest);
+    strcat(queue, receiver);
     char string_formated[600];
 
     mqd_t open;
     int try_send = 0;
     int ret;
 
-    // construir formato de mensagem de verificacao username:dest:<empty_msg>:index_msg:<msg_type>
+    // construir formato de mensagem de verificacao username:receiver:<empty_msg>:index_msg:<msg_type>
     // type_msg = tipo de mensagem(msg, check, valid, invalid)
     char full_msg_check[50] = "";
+    char dest[20] = "";
+    strcpy(dest, (is_broadcast == 1) ? "broadcast" : receiver);
     sprintf(full_msg_check, "%s:%s:%s:%s", username, dest, body, index_msg_received);
 
     //abre a fila do usuario
     if ((open = mq_open(queue, O_WRONLY)) < 0)
     {
-        sprintf(string_formated, "UNKNOWN USER %s", dest); //erro de usuario inexistente
+        sprintf(string_formated, "UNKNOWN USER %s", receiver); //erro de usuario inexistente
         printf("%s\n", string_formated);
     }
 
@@ -164,19 +166,19 @@ void send_msg_verification(char *dest, char *body, char *index_msg_received)
     if (ret < 0)
     {
         //erro retornado se não foi possível enviar mensagem
-        sprintf(string_formated, "ERRO Assinatura %s:%s:%s", username, dest, index_msg_received);
+        sprintf(string_formated, "ERRO Assinatura %s:%s:%s", username, receiver, index_msg_received);
         printf("%s\n", string_formated);
     }
     mq_close(open);
 }
 
-void check_signature(char *sender, char *body, char *index_msg_received)
+void check_signature(char *receiver, char *body, char *index_msg_received)
 {
     /*
         Funcao para verficar autenticidade de Mensagens Recebidas
     */
     sprintf(index_msg_received, "%s?", index_msg_received);
-    send_msg_verification(sender, body, index_msg_received);
+    send_msg_verification(receiver, body, index_msg_received, 0);
 }
 
 void confirm_signature(char *receiver, char *body, char *index_msg_received)
@@ -191,14 +193,15 @@ void confirm_signature(char *receiver, char *body, char *index_msg_received)
     split_format_message_full(messages_sent[aux_index], NULL, msg_receiver, msg_body, NULL);
     // verificar na lista de mensagens enviadas se o destinatario eh o msm que esta pedindo a
     // confirmacao de mensagem ou verifica se foi um broadcast
-    int receiver_valid = strcmp(msg_receiver, receiver) && strcmp(msg_receiver, "all");
+    int is_broadcast = strcmp(msg_receiver, "all");
+    int receiver_valid = strcmp(msg_receiver, receiver) && is_broadcast;
     // int receiver_valid = strcmp(msg_receiver, receiver);
     if (aux_index <= msg_index && strcmp(msg_body, body) == 0 && receiver_valid == 0)
         // Mensagem Confirmada
         index_msg_received[strlen(index_msg_received) - 1] = 'y';
     else
         index_msg_received[strlen(index_msg_received) - 1] = 'n';
-    send_msg_verification(receiver, body, index_msg_received);
+    send_msg_verification(receiver, body, index_msg_received, !is_broadcast);
 }
 
 void *threceber(void *s)
@@ -242,7 +245,7 @@ void *threceber(void *s)
         {
             char tag_msg[20] = "Mensagem Recebida";
             // Mensagem de confirmacao "y": autenticada ou "n": nao autenticada
-            if (strcmp("all", msg.receiver) == 0)
+            if (strcmp("broadcast", msg.receiver) == 0)
             { //caso seja recebido um broadcast
                 strcpy(tag_msg, "BroadCast");
             }
@@ -406,14 +409,14 @@ void *thenviar(void *dest_and_msg)
     pthread_exit(NULL);
 }
 
-void create_channel(){
-    
+void create_channel()
+{
+
     char nomecanal[21];
     printf("Digite o nome do canal:\n");
-    scanf("%s",nomecanal);
-    execl("sala","sala",nomecanal,NULL);
+    scanf("%s", nomecanal);
+    execl("sala", "sala", nomecanal, NULL);
     printf("Sala criada\n");
-
 }
 
 int main()

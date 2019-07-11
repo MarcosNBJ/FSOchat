@@ -33,6 +33,7 @@ struct
 void close_program(char *bye_msg)
 {
     mq_unlink(userfila); // fechar fila de mensagens
+    mq_unlink("/canal-teste");
     if (strlen(bye_msg) > 0)
         printf("%s", bye_msg);
     exit(0);
@@ -71,7 +72,9 @@ void split_format_message_full(char *full_msg, char *sender, char *dest,
         sender = "";
     token = strtok(NULL, ":");
     if (token != NULL && dest != NULL)
+    {
         strcpy(dest, token);
+    }
     else
         dest = "";
     token = strtok(NULL, ":");
@@ -116,7 +119,7 @@ void list()
     {
 
         //itera pelos elementos no diretorio
-        if (strncmp("chat-", de->d_name, 5) != 0 || strcmp(de->d_name, diruser) == 0)
+        if ((strncmp("chat-", de->d_name, 5) != 0 && strncmp("canal-", de->d_name, 5) != 0) || strcmp(de->d_name, diruser) == 0)
         {
             //caso nao seja uma fila de mensagens do nosso programa ou seja a fila do proprio usuario
             continue;
@@ -231,7 +234,6 @@ void *threceber(void *s)
         }
 
         char index_msg[10] = "";
-        // char msg_type[10];
         split_format_message_full(full_msg, msg.sender, msg.receiver, msg.body, index_msg);
 
         // Verifica se é uma mensagem normal:msg ou de verificar assinatura
@@ -267,6 +269,7 @@ void *threceber(void *s)
             // enviando uma mensagem de check "?"
             check_signature(msg.sender, msg.body, index_msg);
         }
+        memset(&msg, 0, sizeof(msgtp));
     }
 
     pthread_exit(NULL);
@@ -293,6 +296,7 @@ void *thenviar(void *dest_and_msg)
     // strcpy(msg.sender, "gustavo");
 
     mqd_t enviar;
+    char envfila[17] = "";
 
     char string_formated[600];
 
@@ -300,7 +304,6 @@ void *thenviar(void *dest_and_msg)
     { //se broadcast
 
         struct dirent *de;
-        char envfila2[17] = "/";
         DIR *dr = opendir("/dev/mqueue");
         char receiver_users[500][20];
         int user_count = 0;
@@ -316,19 +319,19 @@ void *thenviar(void *dest_and_msg)
 
             if (strncmp("chat-", de->d_name, 5) != 0)
             {
-                continue; //pula filas que nao sao do nosso programa
+                continue; //pula filas que nao sao /chat ou nao sao do nosso programa
             }
 
             //faz para cada fila de usuario disponivel
-            strcpy(envfila2, "/");
-            strcat(envfila2, de->d_name);
+            strcpy(envfila, "/");
+            strcat(envfila, de->d_name);
 
-            if (strcmp(userfila, envfila2) == 0)
+            if (strcmp(userfila, envfila) == 0)
             {
                 continue; //pula a fila do proprio usuario
             }
 
-            if ((enviar = mq_open(envfila2, O_WRONLY)) < 0)
+            if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
             {
                 sprintf(string_formated, "UNKNOWN USER %s", &de->d_name[5]); //erro de usuario inexistente
                 printf("%s\n", string_formated);
@@ -371,8 +374,19 @@ void *thenviar(void *dest_and_msg)
         closedir(dr);
     }
     else
-    { //Se mensagem normal
-        char envfila[17] = "/chat-";
+    {
+        char *aux_msg = (char *)dest_and_msg;
+        // se for uma mensagem direta para um usuario ou mensagem para um canal
+        if (aux_msg[0] == '#')
+        {
+            char *token;
+            strcpy(envfila, "/canal-");
+            token = strtok(msg.receiver, "#");
+            strcpy(msg.receiver, token);
+        }
+        else
+            strcpy(envfila, "/chat-");
+
         strcat(envfila, msg.receiver); //junta o nome do destino com o "/chat-" para formar o nome da fila destino
 
         //abre a fila de destino
@@ -409,14 +423,140 @@ void *thenviar(void *dest_and_msg)
     pthread_exit(NULL);
 }
 
+void *thenviarChannel(void *full_msg)
+{
+    /*
+        thread que envia a mensagem para os membros
+    */
+
+    char membros[200][11]; //array com os membros do canal
+    int size_list_membros = 1;
+    // strcpy(membros[0], "lucas");
+    strcpy(membros[0], "lays");
+
+    int response_send, try_send = 0;
+
+    mqd_t enviar;
+
+    char string_formated[600];
+    int i = 0;
+
+    char receiver_users[500][20];
+    int user_count = 0;
+    char envfila[17] = "";
+
+    for (i = 0; i < size_list_membros; i++)
+    {
+        //percorre os membros do canal
+
+        strcpy(envfila, "/chat-");
+        strcat(envfila, membros[i]);
+
+        if ((enviar = mq_open(envfila, O_WRONLY)) < 0)
+        {
+            perror("Erro ao encontrar usuario membro %s"); //erro de usuario inexistente
+            continue;
+        }
+
+        do
+        {
+            strcpy(full_msg, "lucas:teste:Pelo Channel:0");
+            response_send = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
+            try_send++;
+        } while (response_send < 0 && try_send < 3); //tenta enviar a mensagem 3 vezes
+
+        if (response_send < 0)
+        {
+            //erro retornado se não foi possível enviar mensagem
+            perror("Erro ao repassar mensagem para membro %s");
+            continue;
+        }
+        else
+        {
+            // usuarios que receberam a mensagem
+            strcpy(receiver_users[user_count], membros[i]);
+            user_count++;
+        }
+
+        mq_close(enviar);
+    }
+
+    printf("Mensagem enviada para o Channel: ");
+    for (int i = 0; i < user_count; i++)
+    {
+        printf("%s, ", receiver_users[i]);
+    }
+    printf("\n");
+
+    pthread_exit(NULL);
+}
+
+void *threceiverChannel(void *filaCanal)
+{
+    //thread que consome a fila de mensagens do canal e prepara cada mensagem para envio
+    printf("Canal ativo\n");
+    msgtp msg;
+    char full_msg[523];
+    mqd_t receber;
+    pthread_t ids[2];
+
+    //abre a fila para recebimento
+    if ((receber = mq_open((char *)filaCanal, O_RDWR)) < 0)
+    {
+        perror("mq_open error\n");
+        exit(1);
+    }
+
+    char string_formated[600];
+    while (1)
+    { //fica em loop esperando novas mensagens
+
+        if ((mq_receive(receber, (char *)full_msg, sizeof(full_msg), NULL)) < 0)
+        {
+            perror("mq_receive erro\n");
+            exit(1);
+        }
+        //Cria a mensagem no formato a ser enviada pros usuarios membros do canal
+        pthread_create(&ids[1], NULL, thenviarChannel, (void *)full_msg);
+    }
+}
+
 void create_channel()
 {
+    char filaCanal[26] = "/canal-"; //nome da fila do canal
+    char membros[200][11];          //array com os membros do canal
 
     char nomecanal[21];
-    printf("Digite o nome do canal:\n");
+    printf("Digite o nome do canal: ");
     scanf("%s", nomecanal);
-    execl("sala", "sala", nomecanal, NULL);
+    // execl("sala", "sala", nomecanal, NULL);
+
+    pthread_t ids[2];
+
+    strcat(filaCanal, nomecanal); //junta o "/chat-" com o nome do usuario pra formar o nome da fila
+
+    mqd_t receber;
+    struct mq_attr attr;
+
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(msgtp);
+    attr.mq_flags = 0;
+
+    mode_t pmask = umask(0000);
+
+    //Cria e abre a fila para receber as mensagens, com os paramteros acima
+    if ((receber = mq_open(filaCanal, O_RDWR | O_CREAT | O_EXCL, 0622, &attr)) < 0)
+    {
+        perror("Erro ao criar Canal\n");
+        exit(1);
+    }
+
     printf("Sala criada\n");
+
+    umask(pmask);
+
+    //inicia a thread que espera por mensagens
+    pthread_create(&ids[0], NULL, threceiverChannel, (void *)filaCanal);
 }
 
 int main()
@@ -475,12 +615,12 @@ int main()
     char msg_cmd[501] = ""; //variavel para receber o comando ou mensagem
     msgtp msg;
 
-    regex_t reg;
-    if (regcomp(&reg, "a[[:alnum:]]", REG_EXTENDED | REG_NOSUB) != 0)
-    {
-        fprintf(stderr, "erro regcomp\n");
-        exit(1);
-    }
+    // regex_t reg;
+    // if (regcomp(&reg, "a[[:alnum:]]", REG_EXTENDED | REG_NOSUB) != 0)
+    // {
+    //     fprintf(stderr, "erro regcomp\n");
+    //     exit(1);
+    // }
 
     printf("Digite o comando\n");
     while (1)
@@ -500,7 +640,7 @@ int main()
         { //comando canal, para criar um novo canal
             create_channel();
         }
-        else if (regexec(&reg, msg_cmd, 0, NULL, 0) == 0)
+        else
         { //comando enviar
             //cria uma thread que faz o envio da mensagem
             pthread_create(&ids[1], NULL, thenviar, (void *)msg_cmd);

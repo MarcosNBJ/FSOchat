@@ -11,11 +11,9 @@
 #include <sys/types.h>
 #include <regex.h>
 
-
-
-char nomesala[20]; //nome do canal
-char nomefila[26]="canal-"; //nome da fila do canal
-char membros[200][11]; //array com os membros do canal
+char nomesala[20];            //nome do canal
+char nomefila[26] = "canal-"; //nome da fila do canal
+char membros[200][11];        //array com os membros do canal
 
 struct
 {
@@ -23,7 +21,6 @@ struct
     char receiver[11]; //usuario destino
     char body[501];    //corpo da mensagem
 } typedef msgtp;
-
 
 void split_format_message_full(char *full_msg, char *sender, char *dest,
                                char *body, char *index_msg)
@@ -58,7 +55,6 @@ void split_format_message_full(char *full_msg, char *sender, char *dest,
         index_msg = "";
 }
 
-
 void *thenviar(void *dest_and_msg)
 {
     /*
@@ -78,11 +74,12 @@ void *thenviar(void *dest_and_msg)
     mqd_t enviar;
 
     char string_formated[600];
-    int i=0;
+    int i = 0;
 
     char envfila2[17] = "/";
 
-    for(i=0;i<200;i++){
+    for (i = 0; i < 200; i++)
+    {
         //percorre os membros do canal
 
         strcpy(envfila2, "/");
@@ -102,12 +99,11 @@ void *thenviar(void *dest_and_msg)
         if (response_send < 0)
         {
             //erro retornado se não foi possível enviar mensagem
-	        continue;
+            continue;
         }
 
         mq_close(enviar);
     }
-
 
     pthread_exit(NULL);
 }
@@ -121,7 +117,7 @@ void *threceber(void *s)
     char full_msg[523];
     mqd_t receber;
     pthread_t ids[2];
-    char msg_cmd[501] = "#";//significa que é um canal
+    char msg_cmd[501] = "#"; //significa que é um canal
 
     //abre a fila para recebimento
     if ((receber = mq_open(nomefila, O_RDWR)) < 0)
@@ -152,13 +148,13 @@ void *threceber(void *s)
             confirm_signature(msg.sender, msg.body, index_msg);
         }
         else if (index_msg[strlen(index_msg) - 1] == 'y' || index_msg[strlen(index_msg) - 1] == 'n')
-        {   
+        {
             //Cria a mensagem no formato a ser enviada pros usuarios membros do canal
-            strcat(msg_cmd,nomesala);
-            strcat(msg_cmd,":");
-            strcat(msg_cmd,msg.sender);
-            strcat(msg_cmd,":");
-            strcat(msg_cmd,msg.body)
+            strcat(msg_cmd, nomesala);
+            strcat(msg_cmd, ":");
+            strcat(msg_cmd, msg.sender);
+            strcat(msg_cmd, ":");
+            strcat(msg_cmd, msg.body);
 
             pthread_create(&ids[1], NULL, thenviar, (void *)msg_cmd);
         }
@@ -173,12 +169,11 @@ void *threceber(void *s)
     pthread_exit(NULL);
 }
 
-int main(int argc, char **argv){
+int main(int argc, char **argv)
+{
 
-    
     strcpy(nomesala, argv[1]);
     pthread_t ids[2];
-
 
     strcat(nomefila, nomesala); //junta o "/chat-" com o nome do usuario pra formar o nome da fila
 
@@ -194,14 +189,11 @@ int main(int argc, char **argv){
     //Cria e abre a fila para receber as mensagens, com os paramteros acima
     if ((receber = mq_open(nomefila, O_RDWR | O_CREAT | O_EXCL, 0622, &attr)) < 0)
     {
-        exit();
+        exit(1);
     }
 
     umask(pmask);
-    
+
     //inicia a thread que espera por mensagens
     pthread_create(&ids[0], NULL, threceber, NULL);
-
-   
-
 }

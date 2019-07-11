@@ -132,7 +132,7 @@ void list()
     closedir(dr);
 }
 
-void send_msg_verification(char *receiver, char *body, char *index_msg_received, int is_broadcast)
+void send_msg_verification(char *receiver, char *body, char *index_msg_received, char *msg_type)
 {
     /*
         Funcao para enviar as mensagens de verificacao de check e confirm
@@ -150,8 +150,8 @@ void send_msg_verification(char *receiver, char *body, char *index_msg_received,
     // type_msg = tipo de mensagem(msg, check, valid, invalid)
     char full_msg_check[50] = "";
     char dest[20] = "";
-    strcpy(dest, (is_broadcast == 1) ? "broadcast" : receiver);
-    sprintf(full_msg_check, "%s:%s:%s:%s", username, dest, body, index_msg_received);
+    // strcpy(dest, (is_broadcast == 1) ? "broadcast" : receiver);
+    sprintf(full_msg_check, "%s:%s:%s:%s", username, msg_type, body, index_msg_received);
 
     //abre a fila do usuario
     if ((open = mq_open(queue, O_WRONLY)) < 0)
@@ -175,13 +175,13 @@ void send_msg_verification(char *receiver, char *body, char *index_msg_received,
     mq_close(open);
 }
 
-void check_signature(char *receiver, char *body, char *index_msg_received)
+void check_signature(char *sender, char *receiver, char *body, char *index_msg_received)
 {
     /*
         Funcao para verficar autenticidade de Mensagens Recebidas
     */
     sprintf(index_msg_received, "%s?", index_msg_received);
-    send_msg_verification(receiver, body, index_msg_received, 0);
+    send_msg_verification(sender, body, index_msg_received, receiver);
 }
 
 void confirm_signature(char *receiver, char *body, char *index_msg_received)
@@ -205,7 +205,7 @@ void confirm_signature(char *receiver, char *body, char *index_msg_received)
         index_msg_received[strlen(index_msg_received) - 1] = 'y';
     else
         index_msg_received[strlen(index_msg_received) - 1] = 'n';
-    send_msg_verification(receiver, body, index_msg_received, !is_broadcast);
+    send_msg_verification(receiver, body, index_msg_received, msg_receiver);
 }
 
 void *threceber(void *s)
@@ -248,10 +248,14 @@ void *threceber(void *s)
         {
             char tag_msg[20] = "Mensagem Recebida";
             // Mensagem de confirmacao "y": autenticada ou "n": nao autenticada
-            if (strcmp("broadcast", msg.receiver) == 0)
+
+            // verifica se a mensagem confirmada é broadcast ou de um channel
+            if (strcmp("all", msg.receiver) == 0)
             { //caso seja recebido um broadcast
                 strcpy(tag_msg, "BroadCast");
             }
+            else if (msg.receiver[0] = '#')
+                strcpy(tag_msg, msg.receiver);
 
             char result[20] = "";
             // É uma mensagem com a resposta se a mensagem é valida ou nao
@@ -268,7 +272,7 @@ void *threceber(void *s)
         {
             // É uma mensagem comum, entao cheque a autenticidade da mensagem
             // enviando uma mensagem de check "?"
-            check_signature(msg.sender, msg.body, index_msg);
+            check_signature(msg.sender, msg.receiver, msg.body, index_msg);
         }
         memset(&msg, 0, sizeof(msgtp));
     }

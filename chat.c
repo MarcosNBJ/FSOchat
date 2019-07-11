@@ -30,6 +30,15 @@ struct
     char body[501];    //corpo da mensagem
 } typedef msgtp;
 
+// struct para guardar informacoes de canais
+struct
+{
+    char membros[200][11];
+    char path_channel[26];
+    int size_list_membros;
+    char full_msg[523]; // atributo auxiliar para passar mensagem entre as trheads do canal
+} typedef channeltp;
+
 void close_program(char *bye_msg)
 {
     mq_unlink(userfila); // fechar fila de mensagens
@@ -428,7 +437,7 @@ void *thenviar(void *dest_and_msg)
     pthread_exit(NULL);
 }
 
-void *thenviarChannel(void *full_msg)
+void *thenviarChannel(void *channel_md)
 {
     /*
         thread que envia a mensagem para os membros
@@ -438,6 +447,8 @@ void *thenviarChannel(void *full_msg)
     int size_list_membros = 1;
     // strcpy(membros[0], "lucas");
     strcpy(membros[0], "lays");
+
+    channeltp *channel = (channeltp *)channel_md;
 
     int response_send, try_send = 0;
 
@@ -465,7 +476,8 @@ void *thenviarChannel(void *full_msg)
 
         do
         {
-            response_send = mq_send(enviar, (void *)full_msg, 523, 0);
+            printf("MENSAGEM: %s\n", channel->full_msg);
+            response_send = mq_send(enviar, (void *)channel->full_msg, 523, 0);
             try_send++;
         } while (response_send < 0 && try_send < 3); //tenta enviar a mensagem 3 vezes
 
@@ -495,7 +507,7 @@ void *thenviarChannel(void *full_msg)
     pthread_exit(NULL);
 }
 
-void *threceiverChannel(void *filaCanal)
+void *threceiverChannel(void *channel_md)
 {
     //thread que consome a fila de mensagens do canal e prepara cada mensagem para envio
     printf("Canal ativo\n");
@@ -504,8 +516,10 @@ void *threceiverChannel(void *filaCanal)
     mqd_t receber;
     pthread_t ids[2];
 
+    channeltp *channel = (channeltp *)channel_md;
+
     //abre a fila para recebimento
-    if ((receber = mq_open((char *)filaCanal, O_RDWR)) < 0)
+    if ((receber = mq_open((char *)channel->path_channel, O_RDWR)) < 0)
     {
         perror("mq_open error\n");
         exit(1);
@@ -521,14 +535,17 @@ void *threceiverChannel(void *filaCanal)
             exit(1);
         }
         //Cria a mensagem no formato a ser enviada pros usuarios membros do canal
-        pthread_create(&ids[1], NULL, thenviarChannel, (void *)full_msg);
+        printf("MENSAGEM: %s\n", full_msg);
+        strcpy(channel->full_msg, (char *)full_msg);
+        pthread_create(&ids[1], NULL, thenviarChannel, (void *)channel);
     }
 }
 
 void create_channel()
 {
-    char filaCanal[26] = "/canal-"; //nome da fila do canal
-    char membros[200][11];          //array com os membros do canal
+    channeltp channel;
+    strcpy(channel.path_channel, "/canal-"); //nome da fila do canal
+    char membros[200][11];                   //array com os membros do canal
 
     char nomecanal[21];
     printf("Digite o nome do canal: ");
@@ -537,7 +554,7 @@ void create_channel()
 
     pthread_t ids[2];
 
-    strcat(filaCanal, nomecanal); //junta o "/chat-" com o nome do usuario pra formar o nome da fila
+    strcat(channel.path_channel, nomecanal); //junta o "/chat-" com o nome do usuario pra formar o nome da fila
 
     mqd_t receber;
     struct mq_attr attr;
@@ -549,7 +566,7 @@ void create_channel()
     mode_t pmask = umask(0000);
 
     //Cria e abre a fila para receber as mensagens, com os paramteros acima
-    if ((receber = mq_open(filaCanal, O_RDWR | O_CREAT | O_EXCL, 0622, &attr)) < 0)
+    if ((receber = mq_open(channel.path_channel, O_RDWR | O_CREAT | O_EXCL, 0622, &attr)) < 0)
     {
         perror("Erro ao criar Canal\n");
         exit(1);
@@ -560,7 +577,7 @@ void create_channel()
     umask(pmask);
 
     //inicia a thread que espera por mensagens
-    pthread_create(&ids[0], NULL, threceiverChannel, (void *)filaCanal);
+    pthread_create(&ids[0], NULL, threceiverChannel, (void *)&channel);
 }
 
 int main()
@@ -618,13 +635,6 @@ int main()
 
     char msg_cmd[501] = ""; //variavel para receber o comando ou mensagem
     msgtp msg;
-
-    // regex_t reg;
-    // if (regcomp(&reg, "a[[:alnum:]]", REG_EXTENDED | REG_NOSUB) != 0)
-    // {
-    //     fprintf(stderr, "erro regcomp\n");
-    //     exit(1);
-    // }
 
     printf("Digite o comando\n");
     while (1)

@@ -406,6 +406,16 @@ void *thenviar(void *dest_and_msg)
     pthread_exit(NULL);
 }
 
+void create_channel(){
+    
+    char nomecanal[21];
+    printf("Digite o nome do canal:\n");
+    scanf("%s",nomecanal);
+    execl("sala","sala",nomecanal,NULL);
+    printf("Sala criada\n");
+
+}
+
 int main()
 {
     signal(SIGINT, intHandler); //implementa o handler para o ctrl+c
@@ -482,6 +492,10 @@ int main()
         else if (strcmp(msg_cmd, "list") == 0)
         { //comando list
             list();
+        }
+        else if (strcmp(msg_cmd, "canal") == 0)
+        { //comando canal, para criar um novo canal
+            create_channel();
         }
         else if (regexec(&reg, msg_cmd, 0, NULL, 0) == 0)
         { //comando enviar

@@ -254,7 +254,7 @@ void *threceber(void *s)
             { //caso seja recebido um broadcast
                 strcpy(tag_msg, "BroadCast");
             }
-            else if (msg.receiver[0] = '#')
+            else if (msg.receiver[0] == '#')
                 strcpy(tag_msg, msg.receiver);
 
             char result[20] = "";

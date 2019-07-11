@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/types.h>
+#include <regex.h>
 
 // constantes uteis
 #define size_message 523
@@ -187,10 +188,12 @@ void confirm_signature(char *receiver, char *body, char *index_msg_received)
     int aux_index = atoi(index_msg_received);
     char msg_receiver[15] = "";
     char msg_body[501] = "";
-    // verificar na lista de mensagens enviadas se o destinatario eh o msm que esta pedindo a
-    // confirmacao de mensagem
     split_format_message_full(messages_sent[aux_index], NULL, msg_receiver, msg_body, NULL);
-    if (aux_index <= msg_index && strcmp(receiver, msg_receiver) == 0 && strcmp(body, msg_body) == 0)
+    // verificar na lista de mensagens enviadas se o destinatario eh o msm que esta pedindo a
+    // confirmacao de mensagem ou verifica se foi um broadcast
+    int receiver_valid = strcmp(msg_receiver, receiver) && strcmp(msg_receiver, "all");
+    // int receiver_valid = strcmp(msg_receiver, receiver);
+    if (aux_index <= msg_index && strcmp(msg_body, body) == 0 && receiver_valid == 0)
         // Mensagem Confirmada
         index_msg_received[strlen(index_msg_received) - 1] = 'y';
     else
@@ -278,11 +281,12 @@ void *thenviar(void *dest_and_msg)
     // Formato de Mensagem username:dest:<msg_content>:index:<msg_type>
     char full_msg[523] = "";
     sprintf(full_msg, "%s:%s:%d", username, (char *)dest_and_msg, msg_index);
-    // teste de falsificacao de assinatura
-    // sprintf(full_msg, "gustavo:%s:%d", (char *)dest_and_msg, msg_index);
 
     split_format_message((char *)dest_and_msg, msg.receiver, msg.body);
     strcpy(msg.sender, username);
+
+    // teste de falsificacao de assinatura
+    // sprintf(full_msg, "gustavo:%s:%d", (char *)dest_and_msg, msg_index);
     // strcpy(msg.sender, "gustavo");
 
     mqd_t enviar;
@@ -356,6 +360,10 @@ void *thenviar(void *dest_and_msg)
             strcat(string_formated, ", ");
         }
         printf("%s\n", string_formated);
+
+        // adiciona mensagem enviada na lista, com destinatario e codigo
+        strcpy(messages_sent[msg_index], full_msg);
+        msg_index++;
 
         closedir(dr);
     }
@@ -454,11 +462,18 @@ int main()
     char msg_cmd[501] = ""; //variavel para receber o comando ou mensagem
     msgtp msg;
 
+    regex_t reg;
+    if (regcomp(&reg, "a[[:alnum:]]", REG_EXTENDED | REG_NOSUB) != 0)
+    {
+        fprintf(stderr, "erro regcomp\n");
+        exit(1);
+    }
+
     printf("Digite o comando\n");
     while (1)
     {
 
-        scanf("%s", msg_cmd);
+        scanf(" %[^\n]s", msg_cmd);
 
         if (strcmp(msg_cmd, "exit") == 0)
         { // comando exit
@@ -468,7 +483,7 @@ int main()
         { //comando list
             list();
         }
-        else
+        else if (regexec(&reg, msg_cmd, 0, NULL, 0) == 0)
         { //comando enviar
             //cria uma thread que faz o envio da mensagem
             pthread_create(&ids[1], NULL, thenviar, (void *)msg_cmd);

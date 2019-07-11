@@ -196,8 +196,9 @@ void confirm_signature(char *receiver, char *body, char *index_msg_received)
     split_format_message_full(messages_sent[aux_index], NULL, msg_receiver, msg_body, NULL);
     // verificar na lista de mensagens enviadas se o destinatario eh o msm que esta pedindo a
     // confirmacao de mensagem ou verifica se foi um broadcast
+    int is_msg_channel = msg_receiver[0] == '#';
     int is_broadcast = strcmp(msg_receiver, "all");
-    int receiver_valid = strcmp(msg_receiver, receiver) && is_broadcast;
+    int receiver_valid = strcmp(msg_receiver, receiver) && is_broadcast && !is_msg_channel;
     // int receiver_valid = strcmp(msg_receiver, receiver);
     if (aux_index <= msg_index && strcmp(msg_body, body) == 0 && receiver_valid == 0)
         // Mensagem Confirmada
@@ -460,8 +461,7 @@ void *thenviarChannel(void *full_msg)
 
         do
         {
-            strcpy(full_msg, "lucas:teste:Pelo Channel:0");
-            response_send = mq_send(enviar, (void *)full_msg, sizeof(full_msg), 0);
+            response_send = mq_send(enviar, (void *)full_msg, 523, 0);
             try_send++;
         } while (response_send < 0 && try_send < 3); //tenta enviar a mensagem 3 vezes
 
